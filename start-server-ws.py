@@ -7,65 +7,49 @@ from http import HTTPStatus
 # 取得 Railway 分配的 Port
 PORT = int(os.environ.get("PORT", 8080))
 
-# 儲存連線中的手機與電腦
 clients = set()
 
-async def handle_websocket(websocket):
-    """處理遊戲連線邏輯"""
+# 處理 WebSocket 遊戲邏輯
+async def handle_client(websocket):
     clients.add(websocket)
-    print(f"📱 新裝置連線 (目前總數: {len(clients)})")
     try:
         async for message in websocket:
-            # 廣播訊息給其他所有裝置
             if clients:
                 await asyncio.gather(
                     *[client.send(message) for client in clients if client != websocket]
                 )
-    except Exception as e:
-        print(f"⚠️ 連線異常: {e}")
+    except:
+        pass
     finally:
-        clients.remove(websocket)
-        print(f"📉 裝置離開 (目前總數: {len(clients)})")
+        clients.add(websocket)
 
+# 處理 HTTP 請求 (讓網址能顯示網頁)
 async def process_request(path, request_headers):
-    """處理瀏覽器 HTTP 請求 (讓網址能顯示網頁)"""
-    # 如果是 WebSocket 握手請求，交給 handle_websocket 處理
-    if "upgrade" in request_headers.get("connection", "").lower():
+    # 如果路徑是 WebSocket 連線，不攔截
+    if "Upgrade" in request_headers.get("Connection", ""):
         return None
     
-    # 否則，讀取並回傳 HTML 網頁
-    # 預設路徑導向 game-ws.html
-    target_path = path.split('?')[0]
-    if target_path == "/" or target_path == "":
-        target_path = "/game-ws.html"
+    # 否則，讀取對應的 HTML 檔案回傳
+    path = path.split('?')[0] # 移除參數
+    if path == "/": path = "/game-ws.html"
     
-    file_path = f".{target_path}"
-    
+    file_path = f".{path}"
     if os.path.exists(file_path) and os.path.isfile(file_path):
-        mime_type = "text/html"
-        if file_path.endswith(".js"): mime_type = "application/javascript"
-        elif file_path.endswith(".css"): mime_type = "text/css"
-        
         with open(file_path, "rb") as f:
-            return HTTPStatus.OK, {"Content-Type": mime_type}, f.read()
+            return HTTPStatus.OK, {"Content-Type": "text/html"}, f.read()
     
     return HTTPStatus.NOT_FOUND, {}, b"404 Not Found"
 
 async def main():
-    print(f"🚀 雲端伺服器啟動中...")
-    print(f"📍 監聽埠號: {PORT}")
-    
-    # 啟動混合型伺服器 (HTTP + WebSocket)
+    # 同時監聽 HTTP 與 WebSocket
     async with websockets.serve(
-        handle_websocket, 
+        handle_client, 
         "0.0.0.0", 
         PORT, 
         process_request=process_request
     ):
-        await asyncio.Future() # 永久執行
+        print(f"🚀 遊戲伺服器已啟動於 Port {PORT}")
+        await asyncio.Future()
 
 if __name__ == "__main__":
-    try:
-        asyncio.run(main())
-    except KeyboardInterrupt:
-        pass
+    asyncio.run(main())
