@@ -13,14 +13,14 @@ async def handle_client(websocket):
     try:
         async for message in websocket:
             if clients:
-                # 廣播訊息給其他所有裝置
+                # 廣播跳躍訊息給其他所有裝置
                 await asyncio.gather(*[client.send(message) for client in clients if client != websocket])
     except: pass
     finally: clients.remove(websocket)
 
 async def process_request(path, request_headers):
-    """解決 InvalidMessage 錯誤：讓伺服器能同時處理 HTTP 請求"""
-    # 如果是 WebSocket 升級請求，則不攔截，交給 handle_client 處理
+    """關鍵：讓伺服器能同時處理 HTTP 請求，解決 InvalidMessage 錯誤"""
+    # 如果連線標頭包含升級請求，交給 handle_client 處理
     if "upgrade" in request_headers.get("connection", "").lower():
         return None
     
