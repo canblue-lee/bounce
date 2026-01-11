@@ -1,0 +1,717 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>空間掃描 - 設定真實障礙物</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            overflow: hidden;
+            background: #000;
+            font-family: Arial, sans-serif;
+            touch-action: none;
+            user-select: none;
+        }
+
+        /* 相機預覽 */
+        #camera {
+            position: absolute;
+            width: 100vw;
+            height: 100vh;
+            object-fit: cover;
+        }
+
+        /* 遮罩層 */
+        .overlay {
+            position: absolute;
+            width: 100vw;
+            height: 100vh;
+            background: rgba(0, 0, 0, 0.6);
+            z-index: 10;
+        }
+
+        /* 引導動畫容器 */
+        .guide-container {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            z-index: 20;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            pointer-events: none;
+        }
+
+        /* 掃描指示線 */
+        .scan-line {
+            position: absolute;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 4px;
+            height: 100%;
+            background: linear-gradient(to bottom, 
+                transparent 0%,
+                #00ff88 20%,
+                #00ff88 80%,
+                transparent 100%
+            );
+            box-shadow: 0 0 20px #00ff88;
+            animation: scanMove 3s ease-in-out infinite;
+            opacity: 0;
+        }
+
+        .scan-line.active {
+            opacity: 1;
+        }
+
+        @keyframes scanMove {
+            0%, 100% { left: 10%; }
+            50% { left: 90%; }
+        }
+
+        /* 掃描框 */
+        .scan-frame {
+            position: absolute;
+            width: 90%;
+            height: 70%;
+            border: 3px solid #00ff88;
+            border-radius: 20px;
+            box-shadow: 
+                inset 0 0 30px rgba(0, 255, 136, 0.3),
+                0 0 30px rgba(0, 255, 136, 0.5);
+        }
+
+        .scan-frame::before,
+        .scan-frame::after {
+            content: '';
+            position: absolute;
+            width: 30px;
+            height: 30px;
+            border: 4px solid #00ff88;
+        }
+
+        .scan-frame::before {
+            top: -4px;
+            left: -4px;
+            border-right: none;
+            border-bottom: none;
+        }
+
+        .scan-frame::after {
+            bottom: -4px;
+            right: -4px;
+            border-left: none;
+            border-top: none;
+        }
+
+        /* 提示文字 */
+        .instruction {
+            position: absolute;
+            top: 60px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(0, 0, 0, 0.8);
+            padding: 20px 30px;
+            border-radius: 15px;
+            color: white;
+            font-size: 18px;
+            text-align: center;
+            max-width: 90%;
+            backdrop-filter: blur(10px);
+            z-index: 30;
+            box-shadow: 0 5px 20px rgba(0, 0, 0, 0.5);
+        }
+
+        .instruction h2 {
+            color: #00ff88;
+            font-size: 24px;
+            margin-bottom: 10px;
+        }
+
+        .instruction .step {
+            font-size: 16px;
+            opacity: 0.9;
+            margin: 5px 0;
+        }
+
+        /* 進度條 */
+        .progress-container {
+            position: absolute;
+            bottom: 100px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 80%;
+            z-index: 30;
+        }
+
+        .progress-bar {
+            width: 100%;
+            height: 8px;
+            background: rgba(255, 255, 255, 0.2);
+            border-radius: 10px;
+            overflow: hidden;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.3);
+        }
+
+        .progress-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #00ff88, #00d4ff);
+            width: 0%;
+            transition: width 0.3s ease;
+            box-shadow: 0 0 10px #00ff88;
+        }
+
+        .progress-text {
+            color: white;
+            text-align: center;
+            margin-top: 10px;
+            font-size: 16px;
+            text-shadow: 0 2px 5px rgba(0, 0, 0, 0.8);
+        }
+
+        /* 手勢動畫 */
+        .hand-guide {
+            position: absolute;
+            top: 50%;
+            left: 20%;
+            transform: translate(-50%, -50%);
+            font-size: 80px;
+            animation: handMove 3s ease-in-out infinite;
+            opacity: 0;
+        }
+
+        .hand-guide.active {
+            opacity: 0.8;
+        }
+
+        @keyframes handMove {
+            0%, 100% { 
+                left: 20%;
+                transform: translate(-50%, -50%) rotate(-10deg);
+            }
+            50% { 
+                left: 80%;
+                transform: translate(-50%, -50%) rotate(10deg);
+            }
+        }
+
+        /* 按鈕 */
+        .button-container {
+            position: absolute;
+            bottom: 40px;
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 30;
+            pointer-events: all;
+        }
+
+        .btn {
+            padding: 18px 40px;
+            font-size: 18px;
+            font-weight: bold;
+            border: none;
+            border-radius: 50px;
+            cursor: pointer;
+            box-shadow: 0 5px 20px rgba(0, 0, 0, 0.4);
+            transition: all 0.3s;
+            margin: 0 10px;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, #00ff88, #00d4ff);
+            color: #000;
+        }
+
+        .btn-primary:active {
+            transform: scale(0.95);
+        }
+
+        .btn-secondary {
+            background: rgba(255, 255, 255, 0.2);
+            color: white;
+            backdrop-filter: blur(10px);
+        }
+
+        /* 階段指示器 */
+        .stage-indicator {
+            position: absolute;
+            top: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            display: flex;
+            gap: 10px;
+            z-index: 30;
+        }
+
+        .stage-dot {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            background: rgba(255, 255, 255, 0.3);
+            transition: all 0.3s;
+        }
+
+        .stage-dot.active {
+            background: #00ff88;
+            box-shadow: 0 0 15px #00ff88;
+            transform: scale(1.3);
+        }
+
+        .stage-dot.completed {
+            background: #00ff88;
+        }
+
+        /* 偵測到的物體標記 */
+        .object-marker {
+            position: absolute;
+            border: 3px solid #ff00ff;
+            border-radius: 10px;
+            background: rgba(255, 0, 255, 0.2);
+            box-shadow: 
+                inset 0 0 20px rgba(255, 0, 255, 0.3),
+                0 0 20px rgba(255, 0, 255, 0.5);
+            pointer-events: none;
+            z-index: 15;
+        }
+
+        .object-label {
+            position: absolute;
+            top: -30px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(255, 0, 255, 0.9);
+            color: white;
+            padding: 5px 15px;
+            border-radius: 15px;
+            font-size: 12px;
+            font-weight: bold;
+            white-space: nowrap;
+        }
+
+        /* 成功動畫 */
+        .success-overlay {
+            position: absolute;
+            width: 100vw;
+            height: 100vh;
+            background: rgba(0, 255, 136, 0.2);
+            z-index: 40;
+            display: none;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .success-overlay.show {
+            display: flex;
+            animation: successFade 1s ease-out;
+        }
+
+        @keyframes successFade {
+            0% { opacity: 0; }
+            50% { opacity: 1; }
+            100% { opacity: 0; }
+        }
+
+        .success-message {
+            background: rgba(0, 0, 0, 0.9);
+            padding: 40px 60px;
+            border-radius: 20px;
+            text-align: center;
+            color: white;
+        }
+
+        .success-message .icon {
+            font-size: 80px;
+            margin-bottom: 20px;
+        }
+
+        .success-message h2 {
+            color: #00ff88;
+            font-size: 32px;
+            margin-bottom: 10px;
+        }
+
+        /* 隱藏元素 */
+        .hidden {
+            display: none !important;
+        }
+    </style>
+</head>
+<body>
+    <!-- 相機預覽 -->
+    <video id="camera" autoplay playsinline></video>
+
+    <!-- 遮罩 -->
+    <div class="overlay"></div>
+
+    <!-- 階段指示器 -->
+    <div class="stage-indicator">
+        <div class="stage-dot active"></div>
+        <div class="stage-dot"></div>
+        <div class="stage-dot"></div>
+    </div>
+
+    <!-- 引導動畫 -->
+    <div class="guide-container">
+        <div class="scan-frame"></div>
+        <div class="scan-line" id="scanLine"></div>
+        <div class="hand-guide" id="handGuide">👉</div>
+    </div>
+
+    <!-- 提示文字 -->
+    <div class="instruction" id="instruction">
+        <h2>準備掃描空間</h2>
+        <div class="step">📱 將手機水平拿好</div>
+        <div class="step">👀 對準要投影的牆面</div>
+    </div>
+
+    <!-- 進度條 -->
+    <div class="progress-container">
+        <div class="progress-bar">
+            <div class="progress-fill" id="progressFill"></div>
+        </div>
+        <div class="progress-text" id="progressText">準備中...</div>
+    </div>
+
+    <!-- 按鈕 -->
+    <div class="button-container">
+        <button class="btn btn-primary" id="startBtn" onclick="startScan()">
+            開始掃描
+        </button>
+        <button class="btn btn-secondary hidden" id="retryBtn" onclick="retryScan()">
+            重新掃描
+        </button>
+        <button class="btn btn-primary hidden" id="completeBtn" onclick="completeScan()">
+            完成設定
+        </button>
+    </div>
+
+    <!-- 成功動畫 -->
+    <div class="success-overlay" id="successOverlay">
+        <div class="success-message">
+            <div class="icon">✨</div>
+            <h2>空間掃描完成!</h2>
+            <p>已偵測到 <span id="objectCount">0</span> 個障礙物</p>
+        </div>
+    </div>
+
+    <!-- 偵測到的物體容器 -->
+    <div id="objectsContainer"></div>
+
+    <script>
+        // 全域變數
+        let stage = 0; // 0: 準備, 1: 掃描中, 2: 完成
+        let scanProgress = 0;
+        let detectedObjects = [];
+        let isScanning = false;
+        let scanInterval = null;
+        let motionData = {
+            startX: 0,
+            currentX: 0,
+            isMoving: false
+        };
+
+        // 初始化
+        async function init() {
+            console.log('🎬 空間掃描系統啟動');
+            
+            // 請求相機權限
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({
+                    video: {
+                        facingMode: 'environment', // 後置相機
+                        width: { ideal: 1920 },
+                        height: { ideal: 1080 }
+                    }
+                });
+                
+                document.getElementById('camera').srcObject = stream;
+                console.log('✅ 相機啟動成功');
+            } catch (error) {
+                console.error('❌ 相機啟動失敗:', error);
+                alert('無法啟動相機。請確認已允許相機權限。');
+            }
+
+            // 請求陀螺儀權限 (iOS 13+)
+            if (typeof DeviceOrientationEvent !== 'undefined' && 
+                typeof DeviceOrientationEvent.requestPermission === 'function') {
+                // iOS 需要用戶互動才能請求權限,稍後在按鈕點擊時請求
+            } else {
+                // Android 直接監聽
+                setupMotionListeners();
+            }
+        }
+
+        // 設定動作感測器
+        function setupMotionListeners() {
+            window.addEventListener('deviceorientation', (event) => {
+                if (isScanning) {
+                    handleDeviceOrientation(event);
+                }
+            });
+
+            console.log('✅ 動作感測器已啟動');
+        }
+
+        // 處理裝置方向
+        function handleDeviceOrientation(event) {
+            const gamma = event.gamma; // 左右傾斜 (-90 到 90)
+            
+            if (!motionData.isMoving) {
+                motionData.startX = gamma;
+                motionData.isMoving = true;
+            }
+
+            motionData.currentX = gamma;
+            
+            // 計算移動距離
+            const movement = Math.abs(motionData.currentX - motionData.startX);
+            
+            // 更新掃描進度
+            if (movement > 0) {
+                scanProgress = Math.min((movement / 60) * 100, 100); // 60度為滿進度
+                updateProgress(scanProgress);
+                
+                // 模擬偵測物體
+                if (scanProgress > 30 && detectedObjects.length === 0) {
+                    addDetectedObject(30, 40, 20, 30, '書櫃');
+                }
+                if (scanProgress > 60 && detectedObjects.length === 1) {
+                    addDetectedObject(60, 30, 15, 20, '相框');
+                }
+                if (scanProgress > 90 && detectedObjects.length === 2) {
+                    addDetectedObject(15, 60, 25, 15, '桌子');
+                }
+            }
+        }
+
+        // 開始掃描
+        async function startScan() {
+            console.log('🚀 開始掃描');
+            
+            // iOS 請求陀螺儀權限
+            if (typeof DeviceOrientationEvent !== 'undefined' && 
+                typeof DeviceOrientationEvent.requestPermission === 'function') {
+                try {
+                    const permission = await DeviceOrientationEvent.requestPermission();
+                    if (permission === 'granted') {
+                        setupMotionListeners();
+                    } else {
+                        alert('需要陀螺儀權限才能進行掃描');
+                        return;
+                    }
+                } catch (error) {
+                    console.error('權限請求失敗:', error);
+                }
+            }
+
+            stage = 1;
+            isScanning = true;
+            updateStage();
+
+            // 更新 UI
+            document.getElementById('startBtn').classList.add('hidden');
+            document.getElementById('retryBtn').classList.remove('hidden');
+            
+            document.getElementById('instruction').innerHTML = `
+                <h2>慢慢從左掃到右</h2>
+                <div class="step">📱 保持手機水平</div>
+                <div class="step">👉 緩慢移動,不要太快</div>
+            `;
+
+            // 啟動視覺提示
+            document.getElementById('scanLine').classList.add('active');
+            document.getElementById('handGuide').classList.add('active');
+
+            // 模擬掃描(如果沒有陀螺儀)
+            if (!window.DeviceOrientationEvent) {
+                startMockScan();
+            }
+        }
+
+        // 模擬掃描(測試用)
+        function startMockScan() {
+            scanInterval = setInterval(() => {
+                scanProgress += 2;
+                updateProgress(scanProgress);
+
+                if (scanProgress >= 30 && detectedObjects.length === 0) {
+                    addDetectedObject(30, 40, 20, 30, '書櫃');
+                }
+                if (scanProgress >= 60 && detectedObjects.length === 1) {
+                    addDetectedObject(60, 30, 15, 20, '相框');
+                }
+                if (scanProgress >= 90 && detectedObjects.length === 2) {
+                    addDetectedObject(15, 60, 25, 15, '桌子');
+                }
+
+                if (scanProgress >= 100) {
+                    clearInterval(scanInterval);
+                    finishScan();
+                }
+            }, 100);
+        }
+
+        // 更新進度
+        function updateProgress(progress) {
+            document.getElementById('progressFill').style.width = progress + '%';
+            document.getElementById('progressText').textContent = 
+                `掃描進度: ${Math.round(progress)}%`;
+
+            if (progress >= 100 && isScanning) {
+                finishScan();
+            }
+        }
+
+        // 完成掃描
+        function finishScan() {
+            console.log('✅ 掃描完成');
+            isScanning = false;
+            stage = 2;
+            updateStage();
+
+            // 停止動畫
+            document.getElementById('scanLine').classList.remove('active');
+            document.getElementById('handGuide').classList.remove('active');
+
+            // 更新 UI
+            document.getElementById('instruction').innerHTML = `
+                <h2>掃描完成!</h2>
+                <div class="step">✅ 已偵測到 ${detectedObjects.length} 個障礙物</div>
+                <div class="step">🎮 角色將能在這些物體上彈跳</div>
+            `;
+
+            document.getElementById('retryBtn').classList.remove('hidden');
+            document.getElementById('completeBtn').classList.remove('hidden');
+
+            // 顯示成功動畫
+            showSuccessAnimation();
+        }
+
+        // 添加偵測到的物體
+        function addDetectedObject(x, y, width, height, name) {
+            const obj = { x, y, width, height, name };
+            detectedObjects.push(obj);
+
+            // 創建視覺標記
+            const marker = document.createElement('div');
+            marker.className = 'object-marker';
+            marker.style.left = x + '%';
+            marker.style.top = y + '%';
+            marker.style.width = width + '%';
+            marker.style.height = height + '%';
+
+            const label = document.createElement('div');
+            label.className = 'object-label';
+            label.textContent = name;
+            marker.appendChild(label);
+
+            document.getElementById('objectsContainer').appendChild(marker);
+
+            console.log('🎯 偵測到物體:', name);
+        }
+
+        // 顯示成功動畫
+        function showSuccessAnimation() {
+            const overlay = document.getElementById('successOverlay');
+            document.getElementById('objectCount').textContent = detectedObjects.length;
+            overlay.classList.add('show');
+
+            setTimeout(() => {
+                overlay.classList.remove('show');
+            }, 2000);
+        }
+
+        // 重新掃描
+        function retryScan() {
+            console.log('🔄 重新掃描');
+            
+            // 重置狀態
+            stage = 0;
+            scanProgress = 0;
+            detectedObjects = [];
+            isScanning = false;
+            motionData = {
+                startX: 0,
+                currentX: 0,
+                isMoving: false
+            };
+
+            // 清除視覺標記
+            document.getElementById('objectsContainer').innerHTML = '';
+            
+            // 重置 UI
+            updateProgress(0);
+            updateStage();
+            
+            document.getElementById('startBtn').classList.remove('hidden');
+            document.getElementById('retryBtn').classList.add('hidden');
+            document.getElementById('completeBtn').classList.add('hidden');
+            document.getElementById('scanLine').classList.remove('active');
+            document.getElementById('handGuide').classList.remove('active');
+
+            document.getElementById('instruction').innerHTML = `
+                <h2>準備掃描空間</h2>
+                <div class="step">📱 將手機水平拿好</div>
+                <div class="step">👀 對準要投影的牆面</div>
+            `;
+        }
+
+        // 完成設定
+        function completeScan() {
+            console.log('💾 儲存設定:', detectedObjects);
+
+            // 儲存到 localStorage
+            localStorage.setItem('scannedObjects', JSON.stringify(detectedObjects));
+
+            // 傳送到遊戲系統
+            sendToGameSystem();
+
+            // 返回遊戲
+            alert('✅ 空間設定完成!\n\n角色將能在真實物體上彈跳。\n\n點擊確定返回遊戲。');
+            window.location.href = '/game-ws.html?mode=display';
+        }
+
+        // 傳送到遊戲系統
+        function sendToGameSystem() {
+            // 透過 WebSocket 傳送
+            const data = {
+                type: 'SPACE_SCAN',
+                objects: detectedObjects,
+                timestamp: Date.now()
+            };
+
+            // 如果有 WebSocket 連線,直接傳送
+            if (window.opener) {
+                window.opener.postMessage(data, '*');
+            }
+
+            console.log('📤 已傳送掃描資料到遊戲系統');
+        }
+
+        // 更新階段指示器
+        function updateStage() {
+            const dots = document.querySelectorAll('.stage-dot');
+            dots.forEach((dot, index) => {
+                dot.classList.remove('active', 'completed');
+                if (index < stage) {
+                    dot.classList.add('completed');
+                } else if (index === stage) {
+                    dot.classList.add('active');
+                }
+            });
+        }
+
+        // 啟動
+        window.addEventListener('load', init);
+    </script>
+</body>
+</html>
