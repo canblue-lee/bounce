@@ -13,18 +13,18 @@ async def handle_client(websocket):
     try:
         async for message in websocket:
             if clients:
-                # 廣播跳躍訊息給其他所有裝置
+                # 廣播訊息給其他所有裝置
                 await asyncio.gather(*[client.send(message) for client in clients if client != websocket])
     except: pass
     finally: clients.remove(websocket)
 
 async def process_request(path, request_headers):
-    """關鍵：解決 InvalidMessage，讓瀏覽器能正常讀取網頁"""
-    # 如果是 WebSocket 升級請求，則不攔截，交給 handle_client
+    """解決 InvalidMessage 錯誤：讓伺服器能同時處理 HTTP 請求"""
+    # 如果是 WebSocket 升級請求，則不攔截，交給 handle_client 處理
     if "upgrade" in request_headers.get("connection", "").lower():
         return None
     
-    # 預設路徑導向 game-ws.html
+    # 預設路徑導向根目錄下的 game-ws.html
     target = path.split('?')[0]
     if target == "/" or target == "": target = "/game-ws.html"
     
