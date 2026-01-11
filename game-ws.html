@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>投影遊戲 - Railway WebSocket 版</title>
+    <title>投影遊戲 - WebSocket 版</title>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body { overflow: hidden; background: #1a1a2e; font-family: Arial, sans-serif; touch-action: none; user-select: none; }
@@ -22,14 +22,14 @@
         .controller { display: none; width: 100vw; height: 100vh; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); position: relative; }
         .controller-header { text-align: center; padding: 40px 20px; color: white; }
         .jump-button-container { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); text-align: center; }
-        .jump-button { width: 220px; height: 220px; border-radius: 50%; background: linear-gradient(145deg, #ffffff, #e0e0e0); box-shadow: 0 10px 30px rgba(0,0,0,0.3); border: none; cursor: pointer; font-size: 70px; display: flex; align-items: center; justify-content: center; }
-        .jump-button:active { transform: scale(0.95); }
+        .jump-button { width: 220px; height: 220px; border-radius: 50%; background: linear-gradient(145deg, #ffffff, #e0e0e0); box-shadow: 0 10px 30px rgba(0,0,0,0.3); border: none; cursor: pointer; font-size: 70px; display: flex; align-items: center; justify-content: center; -webkit-tap-highlight-color: transparent; }
+        .jump-button:active { transform: scale(0.95); box-shadow: 0 5px 15px rgba(0,0,0,0.3); }
         .controller-stats { position: absolute; bottom: 40px; left: 50%; transform: translateX(-50%); background: rgba(255,255,255,0.2); padding: 20px 40px; border-radius: 20px; color: white; text-align: center; }
         .score { font-size: 56px; font-weight: bold; color: #ffd700; }
 
-        /* 模式選擇 */
+        /* 模式選擇器 */
         .mode-selector { display: flex; flex-direction: column; align-items: center; justify-content: center; width: 100vw; height: 100vh; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; }
-        .mode-button { padding: 30px 50px; font-size: 24px; background: white; color: #667eea; border: none; border-radius: 15px; cursor: pointer; font-weight: bold; margin: 15px; }
+        .mode-button { padding: 30px 50px; font-size: 24px; background: white; color: #667eea; border: none; border-radius: 15px; cursor: pointer; font-weight: bold; margin: 15px; box-shadow: 0 10px 30px rgba(0,0,0,0.2); }
     </style>
 </head>
 <body>
@@ -62,11 +62,11 @@
         let gameState = { character: { x: 400, y: 0, velocityY: 0, size: 80, isJumping: false }, score: 0, gravity: 0.8, jumpForce: -18, ground: 0, platforms: [] };
 
         function connectWebSocket() {
-            // ✅ 改動：自動偵測 Railway 的網址與加密協議
+            // ✅ 自動偵測環境網址與協議
             const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
             const wsUrl = `${wsProtocol}//${window.location.host}`;
 
-            console.log('🔌 連接至伺服器:', wsUrl);
+            console.log('🔌 連接伺服器:', wsUrl);
             ws = new WebSocket(wsUrl);
 
             ws.onopen = () => updateConnectionStatus(true);
@@ -86,12 +86,12 @@
             const text = document.getElementById(mode === 'controller' ? 'controllerStatusText' : 'displayStatusText');
             if (dot && text) {
                 dot.className = connected ? 'status-dot connected' : 'status-dot disconnected';
-                text.textContent = connected ? '已連線' : '重新連線中...';
+                text.textContent = connected ? '已連線' : '連線中...';
             }
         }
 
-        function setMode(selectedMode) {
-            mode = selectedMode;
+        function setMode(m) {
+            mode = m;
             document.getElementById('modeSelector').style.display = 'none';
             document.getElementById(mode === 'controller' ? 'controller' : 'gameDisplay').style.display = 'block';
             connectWebSocket();
