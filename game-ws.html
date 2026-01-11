@@ -7,8 +7,6 @@
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body { overflow: hidden; background: #1a1a2e; font-family: Arial, sans-serif; touch-action: none; user-select: none; }
-
-        /* 遊戲畫面 */
         .game-display { display: none; width: 100vw; height: 100vh; position: relative; }
         #gameCanvas { display: block; width: 100%; height: 100%; background: linear-gradient(to bottom, #87CEEB 0%, #98D8E8 100%); }
         .game-info { position: absolute; top: 30px; left: 30px; color: white; font-size: 48px; font-weight: bold; text-shadow: 3px 3px 6px rgba(0,0,0,0.5); z-index: 10; }
@@ -17,19 +15,10 @@
         .status-dot.connected { background: #2ecc71; }
         .status-dot.disconnected { background: #e74c3c; animation: none; }
         @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
-
-        /* 控制器 */
         .controller { display: none; width: 100vw; height: 100vh; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); position: relative; }
-        .controller-header { text-align: center; padding: 40px 20px; color: white; }
-        .jump-button-container { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); text-align: center; }
-        .jump-button { width: 220px; height: 220px; border-radius: 50%; background: linear-gradient(145deg, #ffffff, #e0e0e0); box-shadow: 0 10px 30px rgba(0,0,0,0.3); border: none; cursor: pointer; font-size: 70px; display: flex; align-items: center; justify-content: center; -webkit-tap-highlight-color: transparent; }
-        .jump-button:active { transform: scale(0.95); box-shadow: 0 5px 15px rgba(0,0,0,0.3); }
-        .controller-stats { position: absolute; bottom: 40px; left: 50%; transform: translateX(-50%); background: rgba(255,255,255,0.2); padding: 20px 40px; border-radius: 20px; color: white; text-align: center; }
-        .score { font-size: 56px; font-weight: bold; color: #ffd700; }
-
-        /* 模式選擇器 */
+        .jump-button { width: 220px; height: 220px; border-radius: 50%; background: white; border: none; cursor: pointer; font-size: 70px; display: flex; align-items: center; justify-content: center; margin: auto; }
         .mode-selector { display: flex; flex-direction: column; align-items: center; justify-content: center; width: 100vw; height: 100vh; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; }
-        .mode-button { padding: 30px 50px; font-size: 24px; background: white; color: #667eea; border: none; border-radius: 15px; cursor: pointer; font-weight: bold; margin: 15px; box-shadow: 0 10px 30px rgba(0,0,0,0.2); }
+        .mode-button { padding: 30px 50px; font-size: 24px; background: white; color: #667eea; border: none; border-radius: 15px; cursor: pointer; font-weight: bold; margin: 15px; }
     </style>
 </head>
 <body>
@@ -40,15 +29,11 @@
     </div>
 
     <div class="controller" id="controller">
-        <div class="controller-header">
-            <h1>🎮 遊戲控制器</h1>
-            <div class="connection-status"><span class="status-dot" id="controllerStatus"></span><span id="controllerStatusText">連線中...</span></div>
-        </div>
-        <div class="jump-button-container">
+        <div class="connection-status"><span class="status-dot" id="controllerStatus"></span><span id="controllerStatusText">連線中...</span></div>
+        <div style="height: 100%; display: flex; flex-direction: column; justify-content: center; align-items: center;">
             <button class="jump-button" id="jumpButton"><span style="color:#667eea">▲</span></button>
-            <div style="color:white; font-size:28px; margin-top:20px; font-weight:bold;">跳躍</div>
+            <h2 style="color:white; margin-top:20px;">點擊跳躍</h2>
         </div>
-        <div class="controller-stats"><div>目前分數</div><div class="score" id="controllerScore">0</div></div>
     </div>
 
     <div class="game-display" id="gameDisplay">
@@ -62,31 +47,27 @@
         let gameState = { character: { x: 400, y: 0, velocityY: 0, size: 80, isJumping: false }, score: 0, gravity: 0.8, jumpForce: -18, ground: 0, platforms: [] };
 
         function connectWebSocket() {
-            // ✅ 自動偵測環境網址與協議
+            // ✅ 自動偵測環境網址
             const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
             const wsUrl = `${wsProtocol}//${window.location.host}`;
 
             console.log('🔌 連接伺服器:', wsUrl);
             ws = new WebSocket(wsUrl);
 
-            ws.onopen = () => updateConnectionStatus(true);
-            ws.onmessage = (event) => {
-                const data = JSON.parse(event.data);
+            ws.onopen = () => updateStatus(true);
+            ws.onmessage = (e) => {
+                const data = JSON.parse(e.data);
                 if (data.type === 'JUMP' && mode === 'display') performJump();
-                if (data.type === 'GAME_STATE' && mode === 'controller') document.getElementById('controllerScore').textContent = data.score;
             };
-            ws.onclose = () => {
-                updateConnectionStatus(false);
-                setTimeout(connectWebSocket, 3000);
-            };
+            ws.onclose = () => { updateStatus(false); setTimeout(connectWebSocket, 3000); };
         }
 
-        function updateConnectionStatus(connected) {
+        function updateStatus(connected) {
             const dot = document.getElementById(mode === 'controller' ? 'controllerStatus' : 'displayStatus');
             const text = document.getElementById(mode === 'controller' ? 'controllerStatusText' : 'displayStatusText');
             if (dot && text) {
                 dot.className = connected ? 'status-dot connected' : 'status-dot disconnected';
-                text.textContent = connected ? '已連線' : '連線中...';
+                text.textContent = connected ? '已連線' : '斷線重連...';
             }
         }
 
@@ -95,54 +76,32 @@
             document.getElementById('modeSelector').style.display = 'none';
             document.getElementById(mode === 'controller' ? 'controller' : 'gameDisplay').style.display = 'block';
             connectWebSocket();
-            if (mode === 'controller') setupController();
-            else setupDisplay();
+            if (mode === 'controller') {
+                const btn = document.getElementById('jumpButton');
+                const jump = (e) => { e.preventDefault(); if(ws.readyState === 1) ws.send(JSON.stringify({type:'JUMP'})); };
+                btn.onclick = jump; btn.ontouchstart = jump;
+            } else initGame();
         }
 
-        function setupController() {
-            const btn = document.getElementById('jumpButton');
-            const jump = (e) => {
-                e.preventDefault();
-                if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: 'JUMP' }));
-                if (navigator.vibrate) navigator.vibrate(50);
-            };
-            btn.addEventListener('touchstart', jump);
-            btn.addEventListener('click', jump);
-        }
-
-        function setupDisplay() {
+        function initGame() {
             const canvas = document.getElementById('gameCanvas');
             const ctx = canvas.getContext('2d');
-            const resize = () => { canvas.width = window.innerWidth; canvas.height = window.innerHeight; gameState.ground = canvas.height - 100; initPlatforms(); };
-            window.addEventListener('resize', resize);
-            resize();
-            setInterval(() => { if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: 'GAME_STATE', score: gameState.score })); }, 500);
+            const resize = () => { canvas.width = window.innerWidth; canvas.height = window.innerHeight; gameState.ground = canvas.height - 100; };
+            window.onresize = resize; resize();
             gameLoop();
         }
 
         function performJump() {
             const char = gameState.character;
-            if (!char.isJumping || char.y >= gameState.ground - char.size - 5) {
-                char.velocityY = gameState.jumpForce; char.isJumping = true; gameState.score += 10;
-            }
-        }
-
-        function initPlatforms() {
-            gameState.platforms = [];
-            for (let i = 0; i < 6; i++) {
-                gameState.platforms.push({ x: (window.innerWidth / 7) * (i + 1), y: gameState.ground - 200 - Math.sin(i * 0.5) * 100, width: 120, height: 25 });
-            }
+            if (!char.isJumping) { char.velocityY = gameState.jumpForce; char.isJumping = true; gameState.score += 10; }
         }
 
         function gameLoop() {
             const canvas = document.getElementById('gameCanvas'), ctx = canvas.getContext('2d'), char = gameState.character;
             char.velocityY += gameState.gravity; char.y += char.velocityY;
             if (char.y >= gameState.ground - char.size) { char.y = gameState.ground - char.size; char.velocityY = 0; char.isJumping = false; }
-            
             ctx.fillStyle = '#87CEEB'; ctx.fillRect(0, 0, canvas.width, canvas.height);
-            ctx.fillStyle = '#e67e22'; gameState.platforms.forEach(p => ctx.fillRect(p.x, p.y, p.width, p.height));
             ctx.fillStyle = '#2ecc71'; ctx.fillRect(0, gameState.ground, canvas.width, canvas.height - gameState.ground);
-            
             ctx.fillStyle = '#e74c3c'; ctx.beginPath(); ctx.arc(char.x, char.y + char.size*0.35, char.size*0.45, 0, Math.PI*2); ctx.fill();
             document.getElementById('displayScore').textContent = gameState.score;
             requestAnimationFrame(gameLoop);
