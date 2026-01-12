@@ -470,12 +470,51 @@
             gameState.platforms = [];
             const canvas = document.getElementById('gameCanvas');
             
+            // 🎯 載入 AI 掃描的物體
+            try {
+                const scannedData = localStorage.getItem('scannedObjects');
+                
+                if (scannedData) {
+                    const scannedObjects = JSON.parse(scannedData);
+                    console.log('📦 載入 AI 掃描物體:', scannedObjects.length, '個');
+                    
+                    // 將掃描的物體轉換成遊戲平台
+                    scannedObjects.forEach((obj, index) => {
+                        // 將百分比座標轉換為像素座標
+                        const platform = {
+                            x: (obj.x / 100) * canvas.width,
+                            y: (obj.y / 100) * canvas.height,
+                            width: (obj.width / 100) * canvas.width,
+                            height: (obj.height / 100) * canvas.height,
+                            name: obj.class || `物體 ${index + 1}`,
+                            confidence: obj.confidence || 1,
+                            isScanned: true  // 標記為掃描物體
+                        };
+                        
+                        gameState.platforms.push(platform);
+                        console.log(`✅ 平台 ${index + 1}: ${platform.name} at (${Math.round(platform.x)}, ${Math.round(platform.y)})`);
+                    });
+                    
+                    console.log(`🎮 共 ${gameState.platforms.length} 個真實物體平台`);
+                } else {
+                    console.log('⚠️ 沒有掃描資料,使用預設平台');
+                    createDefaultPlatforms(canvas);
+                }
+            } catch (error) {
+                console.error('❌ 載入掃描資料失敗:', error);
+                createDefaultPlatforms(canvas);
+            }
+        }
+        
+        // 預設平台 (如果沒有掃描資料)
+        function createDefaultPlatforms(canvas) {
             for (let i = 0; i < 6; i++) {
                 gameState.platforms.push({
                     x: (canvas.width / 7) * (i + 1),
                     y: gameState.ground - 200 - Math.sin(i * 0.5) * 100,
                     width: 120,
-                    height: 25
+                    height: 25,
+                    isScanned: false
                 });
             }
         }
@@ -534,12 +573,31 @@
             }
             
             // 平台
-            ctx.fillStyle = '#e67e22';
-            ctx.strokeStyle = '#d35400';
-            ctx.lineWidth = 3;
             gameState.platforms.forEach(platform => {
-                ctx.fillRect(platform.x, platform.y, platform.width, platform.height);
-                ctx.strokeRect(platform.x, platform.y, platform.width, platform.height);
+                if (platform.isScanned) {
+                    // 真實掃描物體 - 半透明粉紅色
+                    ctx.fillStyle = 'rgba(255, 0, 255, 0.6)';
+                    ctx.strokeStyle = '#ff00ff';
+                    ctx.lineWidth = 4;
+                    
+                    // 繪製平台
+                    ctx.fillRect(platform.x, platform.y, platform.width, platform.height);
+                    ctx.strokeRect(platform.x, platform.y, platform.width, platform.height);
+                    
+                    // 物體標籤
+                    if (platform.name) {
+                        ctx.fillStyle = '#ff00ff';
+                        ctx.font = 'bold 16px Arial';
+                        ctx.fillText(platform.name, platform.x + 5, platform.y - 5);
+                    }
+                } else {
+                    // 預設平台 - 橘色
+                    ctx.fillStyle = '#e67e22';
+                    ctx.strokeStyle = '#d35400';
+                    ctx.lineWidth = 3;
+                    ctx.fillRect(platform.x, platform.y, platform.width, platform.height);
+                    ctx.strokeRect(platform.x, platform.y, platform.width, platform.height);
+                }
             });
             
             // 地面
