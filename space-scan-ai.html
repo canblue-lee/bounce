@@ -1,0 +1,537 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI 物體偵測掃描</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            overflow: hidden;
+            background: #000;
+            font-family: Arial, sans-serif;
+            touch-action: none;
+        }
+
+        /* 相機預覽 */
+        #video {
+            position: absolute;
+            width: 100vw;
+            height: 100vh;
+            object-fit: cover;
+        }
+
+        /* Canvas 用於繪製偵測結果 */
+        #canvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            pointer-events: none;
+            z-index: 10;
+        }
+
+        /* UI 覆蓋層 */
+        .ui-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            z-index: 20;
+            pointer-events: none;
+        }
+
+        /* 頂部資訊 */
+        .top-bar {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            padding: 20px;
+            background: linear-gradient(to bottom, rgba(0,0,0,0.9), transparent);
+        }
+
+        .status {
+            background: rgba(0, 0, 0, 0.8);
+            padding: 15px 20px;
+            border-radius: 15px;
+            color: white;
+            text-align: center;
+            backdrop-filter: blur(10px);
+        }
+
+        .status h2 {
+            color: #00ff88;
+            font-size: 20px;
+            margin-bottom: 5px;
+        }
+
+        .status p {
+            font-size: 14px;
+            opacity: 0.9;
+        }
+
+        /* 掃描指引 */
+        .scan-guide {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            text-align: center;
+            color: white;
+            font-size: 48px;
+            animation: pulse 2s ease-in-out infinite;
+            text-shadow: 0 0 20px rgba(0, 255, 136, 0.8);
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 0.5; transform: translate(-50%, -50%) scale(1); }
+            50% { opacity: 1; transform: translate(-50%, -50%) scale(1.1); }
+        }
+
+        /* 偵測統計 */
+        .stats {
+            position: absolute;
+            right: 20px;
+            top: 120px;
+            background: rgba(0, 0, 0, 0.8);
+            padding: 15px;
+            border-radius: 15px;
+            min-width: 180px;
+            backdrop-filter: blur(10px);
+        }
+
+        .stat-item {
+            color: white;
+            margin: 10px 0;
+            display: flex;
+            justify-content: space-between;
+            font-size: 14px;
+        }
+
+        .stat-value {
+            color: #00ff88;
+            font-weight: bold;
+            font-size: 18px;
+        }
+
+        /* 底部控制 */
+        .bottom-controls {
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            padding: 20px;
+            background: linear-gradient(to top, rgba(0,0,0,0.9), transparent);
+            pointer-events: all;
+        }
+
+        .btn {
+            width: 100%;
+            padding: 18px;
+            font-size: 18px;
+            font-weight: bold;
+            border: none;
+            border-radius: 50px;
+            cursor: pointer;
+            margin: 10px 0;
+            box-shadow: 0 5px 20px rgba(0, 0, 0, 0.4);
+            transition: all 0.3s;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, #00ff88, #00d4ff);
+            color: #000;
+        }
+
+        .btn-secondary {
+            background: rgba(255, 255, 255, 0.2);
+            color: white;
+            backdrop-filter: blur(10px);
+        }
+
+        .btn:active {
+            transform: scale(0.98);
+        }
+
+        .btn.hidden {
+            display: none;
+        }
+
+        /* 載入畫面 */
+        .loading {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(0, 0, 0, 0.95);
+            padding: 40px 60px;
+            border-radius: 20px;
+            text-align: center;
+            color: white;
+            z-index: 100;
+        }
+
+        .loading.hidden {
+            display: none;
+        }
+
+        .spinner {
+            border: 4px solid rgba(255, 255, 255, 0.1);
+            border-top: 4px solid #00ff88;
+            border-radius: 50%;
+            width: 50px;
+            height: 50px;
+            animation: spin 1s linear infinite;
+            margin: 20px auto;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        /* 成功提示 */
+        .success-toast {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%) scale(0.9);
+            background: rgba(0, 0, 0, 0.95);
+            padding: 40px 60px;
+            border-radius: 20px;
+            text-align: center;
+            color: white;
+            z-index: 100;
+            opacity: 0;
+            transition: all 0.3s;
+            pointer-events: none;
+        }
+
+        .success-toast.show {
+            opacity: 1;
+            transform: translate(-50%, -50%) scale(1);
+        }
+
+        .success-icon {
+            font-size: 60px;
+            margin-bottom: 20px;
+        }
+    </style>
+    
+    <!-- TensorFlow.js -->
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.11.0"></script>
+    <!-- COCO-SSD 物體偵測模型 -->
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd@2.2.3"></script>
+</head>
+<body>
+    <!-- 相機預覽 -->
+    <video id="video" autoplay playsinline></video>
+
+    <!-- 繪圖 Canvas -->
+    <canvas id="canvas"></canvas>
+
+    <!-- UI 覆蓋層 -->
+    <div class="ui-overlay">
+        <!-- 頂部狀態 -->
+        <div class="top-bar">
+            <div class="status" id="status">
+                <h2>🤖 AI 物體偵測系統</h2>
+                <p>準備啟動相機...</p>
+            </div>
+        </div>
+
+        <!-- 掃描指引 -->
+        <div class="scan-guide hidden" id="scanGuide">
+            👉
+        </div>
+
+        <!-- 統計資訊 -->
+        <div class="stats">
+            <div class="stat-item">
+                <span>偵測物體:</span>
+                <span class="stat-value" id="objectCount">0</span>
+            </div>
+            <div class="stat-item">
+                <span>掃描幀數:</span>
+                <span class="stat-value" id="frameCount">0</span>
+            </div>
+            <div class="stat-item">
+                <span>信心度:</span>
+                <span class="stat-value" id="avgConfidence">0%</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- 底部控制 -->
+    <div class="bottom-controls">
+        <button class="btn btn-primary" id="startBtn" onclick="startScanning()">
+            🚀 開始 AI 掃描
+        </button>
+        <button class="btn btn-secondary hidden" id="stopBtn" onclick="stopScanning()">
+            ⏹️ 停止掃描
+        </button>
+        <button class="btn btn-primary hidden" id="completeBtn" onclick="completeAndStartGame()">
+            ✅ 完成並開始遊戲
+        </button>
+    </div>
+
+    <!-- 載入畫面 -->
+    <div class="loading" id="loading">
+        <div class="spinner"></div>
+        <h2>載入 AI 模型...</h2>
+        <p>首次使用需要下載約 5MB 資料</p>
+    </div>
+
+    <!-- 成功提示 -->
+    <div class="success-toast" id="successToast">
+        <div class="success-icon">✨</div>
+        <h2>掃描完成!</h2>
+        <p id="successMessage"></p>
+    </div>
+
+    <script>
+        // 全域變數
+        let video, canvas, ctx;
+        let model = null;
+        let isScanning = false;
+        let detectedObjects = [];
+        let frameCounter = 0;
+        let animationId = null;
+
+        // 初始化
+        async function init() {
+            console.log('🚀 AI 物體偵測系統啟動');
+
+            video = document.getElementById('video');
+            canvas = document.getElementById('canvas');
+            ctx = canvas.getContext('2d');
+
+            // 設定 Canvas 大小
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+
+            // 啟動相機
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({
+                    video: {
+                        facingMode: 'environment',
+                        width: { ideal: 1920 },
+                        height: { ideal: 1080 }
+                    }
+                });
+
+                video.srcObject = stream;
+                console.log('✅ 相機啟動成功');
+
+                updateStatus('🎥 相機已就緒', '點擊「開始 AI 掃描」進行物體偵測');
+
+                // 載入 AI 模型
+                await loadModel();
+
+            } catch (error) {
+                console.error('❌ 相機啟動失敗:', error);
+                updateStatus('❌ 相機錯誤', '無法啟動相機,請檢查權限');
+                document.getElementById('loading').classList.add('hidden');
+            }
+        }
+
+        // 載入 TensorFlow.js 模型
+        async function loadModel() {
+            try {
+                console.log('📦 載入 COCO-SSD 模型...');
+                model = await cocoSsd.load();
+                console.log('✅ AI 模型載入完成');
+                
+                document.getElementById('loading').classList.add('hidden');
+                updateStatus('🤖 AI 已就緒', '準備偵測物體');
+
+            } catch (error) {
+                console.error('❌ 模型載入失敗:', error);
+                updateStatus('❌ 載入失敗', '請重新整理頁面');
+                document.getElementById('loading').classList.add('hidden');
+            }
+        }
+
+        // 開始掃描
+        function startScanning() {
+            if (!model) {
+                alert('AI 模型尚未載入完成');
+                return;
+            }
+
+            console.log('🎬 開始 AI 掃描');
+            isScanning = true;
+            frameCounter = 0;
+            detectedObjects = [];
+
+            // 更新 UI
+            document.getElementById('startBtn').classList.add('hidden');
+            document.getElementById('stopBtn').classList.remove('hidden');
+            document.getElementById('scanGuide').classList.remove('hidden');
+
+            updateStatus('👉 緩慢從左掃到右', '讓 AI 偵測所有物體');
+
+            // 開始偵測循環
+            detectLoop();
+        }
+
+        // 停止掃描
+        function stopScanning() {
+            console.log('⏹️ 停止掃描');
+            isScanning = false;
+
+            if (animationId) {
+                cancelAnimationFrame(animationId);
+            }
+
+            document.getElementById('stopBtn').classList.add('hidden');
+            document.getElementById('completeBtn').classList.remove('hidden');
+            document.getElementById('scanGuide').classList.add('hidden');
+
+            updateStatus('✅ 掃描完成', `已偵測 ${detectedObjects.length} 個物體`);
+        }
+
+        // AI 偵測循環
+        async function detectLoop() {
+            if (!isScanning || !model) return;
+
+            frameCounter++;
+            document.getElementById('frameCount').textContent = frameCounter;
+
+            try {
+                // 使用 COCO-SSD 偵測物體
+                const predictions = await model.detect(video);
+
+                // 清空 Canvas
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+                // 計算縮放比例
+                const scaleX = canvas.width / video.videoWidth;
+                const scaleY = canvas.height / video.videoHeight;
+
+                let totalConfidence = 0;
+                let validPredictions = 0;
+
+                // 繪製偵測結果
+                predictions.forEach(prediction => {
+                    // 只處理信心度 > 50% 的物體
+                    if (prediction.score > 0.5) {
+                        const [x, y, width, height] = prediction.bbox;
+
+                        // 縮放座標
+                        const scaledX = x * scaleX;
+                        const scaledY = y * scaleY;
+                        const scaledWidth = width * scaleX;
+                        const scaledHeight = height * scaleY;
+
+                        // 繪製邊框
+                        ctx.strokeStyle = '#ff00ff';
+                        ctx.lineWidth = 4;
+                        ctx.strokeRect(scaledX, scaledY, scaledWidth, scaledHeight);
+
+                        // 繪製半透明填充
+                        ctx.fillStyle = 'rgba(255, 0, 255, 0.2)';
+                        ctx.fillRect(scaledX, scaledY, scaledWidth, scaledHeight);
+
+                        // 繪製標籤
+                        const label = `${prediction.class} ${Math.round(prediction.score * 100)}%`;
+                        ctx.fillStyle = '#ff00ff';
+                        ctx.font = 'bold 18px Arial';
+                        ctx.fillText(label, scaledX, scaledY - 10);
+
+                        // 儲存物體資訊
+                        const objKey = `${prediction.class}-${Math.round(scaledX)}-${Math.round(scaledY)}`;
+                        
+                        if (!detectedObjects.find(o => o.key === objKey)) {
+                            detectedObjects.push({
+                                key: objKey,
+                                class: prediction.class,
+                                confidence: prediction.score,
+                                x: (scaledX / canvas.width) * 100,
+                                y: (scaledY / canvas.height) * 100,
+                                width: (scaledWidth / canvas.width) * 100,
+                                height: (scaledHeight / canvas.height) * 100,
+                                bbox: [scaledX, scaledY, scaledWidth, scaledHeight]
+                            });
+
+                            console.log('🎯 偵測到:', prediction.class, Math.round(prediction.score * 100) + '%');
+                        }
+
+                        totalConfidence += prediction.score;
+                        validPredictions++;
+                    }
+                });
+
+                // 更新統計
+                document.getElementById('objectCount').textContent = detectedObjects.length;
+                
+                if (validPredictions > 0) {
+                    const avgConf = (totalConfidence / validPredictions) * 100;
+                    document.getElementById('avgConfidence').textContent = Math.round(avgConf) + '%';
+                }
+
+                // 自動停止條件
+                if (detectedObjects.length >= 5 && frameCounter > 100) {
+                    stopScanning();
+                }
+
+            } catch (error) {
+                console.error('❌ 偵測錯誤:', error);
+            }
+
+            // 繼續偵測
+            if (isScanning) {
+                animationId = requestAnimationFrame(detectLoop);
+            }
+        }
+
+        // 完成並開始遊戲
+        function completeAndStartGame() {
+            console.log('💾 儲存掃描結果並啟動遊戲');
+
+            if (detectedObjects.length === 0) {
+                alert('尚未偵測到任何物體,請重新掃描');
+                return;
+            }
+
+            // 儲存到 localStorage
+            localStorage.setItem('scannedObjects', JSON.stringify(detectedObjects));
+
+            // 顯示成功訊息
+            document.getElementById('successMessage').textContent = 
+                `已偵測 ${detectedObjects.length} 個物體\n即將啟動遊戲...`;
+            document.getElementById('successToast').classList.add('show');
+
+            // 2 秒後跳轉到遊戲
+            setTimeout(() => {
+                window.location.href = '/game-ws.html?mode=controller';
+            }, 2000);
+        }
+
+        // 更新狀態顯示
+        function updateStatus(title, message) {
+            document.getElementById('status').innerHTML = `
+                <h2>${title}</h2>
+                <p>${message}</p>
+            `;
+        }
+
+        // 啟動
+        window.addEventListener('load', init);
+
+        // 調整 Canvas 大小
+        window.addEventListener('resize', () => {
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+        });
+    </script>
+</body>
+</html>
