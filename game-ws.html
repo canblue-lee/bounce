@@ -281,8 +281,9 @@
         function connectWebSocket() {
             const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
             const wsHost = window.location.hostname;
-            const wsPort = 8001;
-            const wsUrl = `${wsProtocol}//${wsHost}:${wsPort}`;
+            
+            // Render 環境使用相同的 host,不需要額外端口
+            const wsUrl = `${wsProtocol}//${wsHost}`;
 
             console.log('🔌 連接 WebSocket:', wsUrl);
 
