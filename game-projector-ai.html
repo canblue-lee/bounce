@@ -1,0 +1,523 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>投影端 - AI 掃描彈跳遊戲</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            overflow: hidden;
+            background: #0a0a0a;
+            font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+        }
+
+        #gameCanvas {
+            display: block;
+            width: 100vw;
+            height: 100vh;
+        }
+
+        .waiting-screen {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: linear-gradient(135deg, #1e293b, #0f172a);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+        }
+
+        .waiting-screen.hidden {
+            display: none;
+        }
+
+        .waiting-icon {
+            font-size: 80px;
+            margin-bottom: 30px;
+            animation: float 3s ease-in-out infinite;
+        }
+
+        @keyframes float {
+            0%, 100% { transform: translateY(0); }
+            50% { transform: translateY(-20px); }
+        }
+
+        .waiting-screen h1 {
+            color: white;
+            font-size: 36px;
+            margin-bottom: 15px;
+        }
+
+        .waiting-screen p {
+            color: rgba(255, 255, 255, 0.7);
+            font-size: 18px;
+            text-align: center;
+            line-height: 1.6;
+        }
+
+        .game-ui {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            background: rgba(0, 0, 0, 0.8);
+            padding: 20px 30px;
+            border-radius: 15px;
+            color: white;
+            backdrop-filter: blur(10px);
+            z-index: 100;
+        }
+
+        .score {
+            font-size: 32px;
+            font-weight: bold;
+            color: #00ff88;
+            margin-bottom: 10px;
+        }
+
+        .info {
+            font-size: 14px;
+            opacity: 0.8;
+        }
+
+        .platform-info {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            background: rgba(0, 0, 0, 0.8);
+            padding: 15px 20px;
+            border-radius: 15px;
+            color: white;
+            backdrop-filter: blur(10px);
+            z-index: 100;
+        }
+
+        .platform-info h3 {
+            color: #00ff88;
+            margin-bottom: 8px;
+            font-size: 14px;
+        }
+
+        .platform-item {
+            font-size: 12px;
+            margin: 4px 0;
+            opacity: 0.9;
+        }
+
+        .controls-hint {
+            position: absolute;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(0, 0, 0, 0.8);
+            padding: 15px 25px;
+            border-radius: 15px;
+            color: white;
+            text-align: center;
+            backdrop-filter: blur(10px);
+            z-index: 100;
+            font-size: 14px;
+        }
+
+        .status-bar {
+            position: absolute;
+            bottom: 20px;
+            right: 20px;
+            background: rgba(0, 0, 0, 0.8);
+            padding: 10px 15px;
+            border-radius: 10px;
+            color: white;
+            backdrop-filter: blur(10px);
+            z-index: 100;
+            font-size: 12px;
+        }
+
+        .status-dot {
+            display: inline-block;
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            margin-right: 6px;
+        }
+
+        .status-dot.connected {
+            background: #22c55e;
+        }
+
+        .status-dot.disconnected {
+            background: #ef4444;
+            animation: blink 1s infinite;
+        }
+
+        @keyframes blink {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.3; }
+        }
+    </style>
+</head>
+<body>
+    <div class="waiting-screen" id="waitingScreen">
+        <div class="waiting-icon">🤖</div>
+        <h1>等待 AI 掃描...</h1>
+        <p>
+            請在手機端開啟 AI 掃描頁面<br>
+            掃描空間中的物體作為遊戲障礙物
+        </p>
+    </div>
+
+    <canvas id="gameCanvas"></canvas>
+
+    <div class="game-ui hidden" id="gameUI">
+        <div class="score">分數: <span id="score">0</span></div>
+        <div class="info">按空白鍵跳躍 | WASD 移動</div>
+    </div>
+
+    <div class="platform-info hidden" id="platformInfo">
+        <h3>🎯 掃描到的障礙物</h3>
+        <div id="platformList"></div>
+    </div>
+
+    <div class="controls-hint hidden" id="controlsHint">
+        ⌨️ 鍵盤: WASD移動 | 空白跳躍  •  📱 手機: 傾斜控制
+    </div>
+
+    <div class="status-bar">
+        <span class="status-dot disconnected" id="wsStatus"></span>
+        <span id="wsText">連線中...</span>
+    </div>
+
+    <script>
+        // 全域變數
+        let canvas, ctx;
+        let ws = null;
+        let gameRunning = false;
+        let platforms = [];
+        let player = {
+            x: 100,
+            y: 100,
+            vx: 0,
+            vy: 0,
+            width: 40,
+            height: 40,
+            grounded: false
+        };
+        let score = 0;
+        let keys = {};
+
+        const GRAVITY = 0.6;
+        const JUMP_FORCE = -15;
+        const MOVE_SPEED = 6;
+        const WS_URL = 'wss://bounce-7ok4.onrender.com';
+
+        // 初始化
+        function init() {
+            console.log('🎮 投影端遊戲系統啟動');
+
+            canvas = document.getElementById('gameCanvas');
+            ctx = canvas.getContext('2d');
+
+            resizeCanvas();
+            window.addEventListener('resize', resizeCanvas);
+
+            connectWebSocket();
+            setupControls();
+        }
+
+        function resizeCanvas() {
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+        }
+
+        // WebSocket 連線
+        function connectWebSocket() {
+            ws = new WebSocket(WS_URL);
+
+            ws.onopen = () => {
+                console.log('✅ WebSocket 連線成功');
+                document.getElementById('wsStatus').classList.remove('disconnected');
+                document.getElementById('wsStatus').classList.add('connected');
+                document.getElementById('wsText').textContent = '已連線';
+
+                ws.send(JSON.stringify({
+                    type: 'register',
+                    role: 'projector',
+                    timestamp: Date.now()
+                }));
+            };
+
+            ws.onclose = () => {
+                console.log('🔌 WebSocket 關閉');
+                document.getElementById('wsStatus').classList.remove('connected');
+                document.getElementById('wsStatus').classList.add('disconnected');
+                document.getElementById('wsText').textContent = '重新連線中...';
+                setTimeout(connectWebSocket, 3000);
+            };
+
+            ws.onmessage = (event) => {
+                try {
+                    const message = JSON.parse(event.data);
+                    handleMessage(message);
+                } catch (error) {
+                    console.error('訊息解析錯誤:', error);
+                }
+            };
+        }
+
+        // 處理訊息
+        function handleMessage(message) {
+            console.log('📨 收到訊息:', message.type);
+
+            switch (message.type) {
+                case 'gameData':
+                    loadGameData(message);
+                    break;
+
+                case 'startGame':
+                    startGame();
+                    break;
+            }
+        }
+
+        // 載入遊戲資料
+        function loadGameData(data) {
+            console.log('📦 載入遊戲資料');
+            console.log('平台數量:', data.platforms.length);
+
+            // 轉換平台座標
+            platforms = data.platforms.map(p => ({
+                x: p.x * canvas.width,
+                y: p.y * canvas.height,
+                width: p.width * canvas.width,
+                height: 20,
+                label: p.label
+            }));
+
+            // 添加地板
+            platforms.push({
+                x: 0,
+                y: canvas.height - 50,
+                width: canvas.width,
+                height: 50,
+                label: 'Ground'
+            });
+
+            console.log('✅ 平台資料載入完成');
+
+            // 顯示平台列表
+            showPlatformList();
+        }
+
+        // 顯示平台列表
+        function showPlatformList() {
+            const listEl = document.getElementById('platformList');
+            listEl.innerHTML = '';
+
+            const uniqueLabels = [...new Set(platforms.map(p => p.label))];
+            uniqueLabels.forEach(label => {
+                const count = platforms.filter(p => p.label === label).length;
+                const item = document.createElement('div');
+                item.className = 'platform-item';
+                item.textContent = `${label}: ${count}`;
+                listEl.appendChild(item);
+            });
+
+            document.getElementById('platformInfo').classList.remove('hidden');
+        }
+
+        // 開始遊戲
+        function startGame() {
+            console.log('🎮 遊戲開始!');
+
+            document.getElementById('waitingScreen').classList.add('hidden');
+            document.getElementById('gameUI').classList.remove('hidden');
+            document.getElementById('controlsHint').classList.remove('hidden');
+
+            // 重置玩家
+            player.x = 100;
+            player.y = 100;
+            player.vx = 0;
+            player.vy = 0;
+            score = 0;
+
+            gameRunning = true;
+            gameLoop();
+        }
+
+        // 遊戲循環
+        function gameLoop() {
+            if (!gameRunning) return;
+
+            // 清空畫布
+            ctx.fillStyle = '#1a1a2e';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            // 繪製背景網格
+            drawGrid();
+
+            // 更新玩家
+            updatePlayer();
+
+            // 繪製平台
+            drawPlatforms();
+
+            // 繪製玩家
+            drawPlayer();
+
+            // 繼續循環
+            requestAnimationFrame(gameLoop);
+        }
+
+        // 繪製網格
+        function drawGrid() {
+            ctx.strokeStyle = 'rgba(255, 255, 255, 0.05)';
+            ctx.lineWidth = 1;
+
+            for (let x = 0; x < canvas.width; x += 50) {
+                ctx.beginPath();
+                ctx.moveTo(x, 0);
+                ctx.lineTo(x, canvas.height);
+                ctx.stroke();
+            }
+
+            for (let y = 0; y < canvas.height; y += 50) {
+                ctx.beginPath();
+                ctx.moveTo(0, y);
+                ctx.lineTo(canvas.width, y);
+                ctx.stroke();
+            }
+        }
+
+        // 更新玩家
+        function updatePlayer() {
+            // 重力
+            player.vy += GRAVITY;
+
+            // 鍵盤控制
+            if (keys['a'] || keys['ArrowLeft']) player.vx = -MOVE_SPEED;
+            else if (keys['d'] || keys['ArrowRight']) player.vx = MOVE_SPEED;
+            else player.vx = 0;
+
+            // 移動
+            player.x += player.vx;
+            player.y += player.vy;
+
+            // 碰撞檢測
+            player.grounded = false;
+
+            platforms.forEach(platform => {
+                if (
+                    player.x + player.width > platform.x &&
+                    player.x < platform.x + platform.width &&
+                    player.y + player.height > platform.y &&
+                    player.y + player.height < platform.y + platform.height &&
+                    player.vy > 0
+                ) {
+                    player.y = platform.y - player.height;
+                    player.vy = 0;
+                    player.grounded = true;
+
+                    // 增加分數
+                    score += 0.1;
+                    document.getElementById('score').textContent = Math.floor(score);
+                }
+            });
+
+            // 邊界
+            if (player.x < 0) player.x = 0;
+            if (player.x + player.width > canvas.width) {
+                player.x = canvas.width - player.width;
+            }
+
+            // 掉落重生
+            if (player.y > canvas.height) {
+                player.x = 100;
+                player.y = 100;
+                player.vy = 0;
+                score = Math.max(0, score - 10);
+            }
+        }
+
+        // 繪製平台
+        function drawPlatforms() {
+            platforms.forEach(platform => {
+                // 平台主體
+                ctx.fillStyle = '#00ff88';
+                ctx.shadowColor = '#00ff88';
+                ctx.shadowBlur = 10;
+                ctx.fillRect(platform.x, platform.y, platform.width, platform.height);
+                ctx.shadowBlur = 0;
+
+                // 標籤
+                ctx.fillStyle = '#fff';
+                ctx.font = 'bold 12px Arial';
+                ctx.fillText(platform.label, platform.x + 5, platform.y - 5);
+
+                // 邊框
+                ctx.strokeStyle = '#fff';
+                ctx.lineWidth = 2;
+                ctx.strokeRect(platform.x, platform.y, platform.width, platform.height);
+            });
+        }
+
+        // 繪製玩家
+        function drawPlayer() {
+            // 主體
+            ctx.fillStyle = '#ff6b6b';
+            ctx.shadowColor = '#ff6b6b';
+            ctx.shadowBlur = 15;
+            ctx.fillRect(player.x, player.y, player.width, player.height);
+            ctx.shadowBlur = 0;
+
+            // 眼睛
+            ctx.fillStyle = '#fff';
+            ctx.fillRect(player.x + 8, player.y + 8, 10, 10);
+            ctx.fillRect(player.x + 22, player.y + 8, 10, 10);
+
+            // 瞳孔
+            ctx.fillStyle = '#000';
+            ctx.fillRect(player.x + 12, player.y + 12, 4, 4);
+            ctx.fillRect(player.x + 26, player.y + 12, 4, 4);
+
+            // 速度指示
+            if (Math.abs(player.vx) > 0 || Math.abs(player.vy) > 2) {
+                ctx.strokeStyle = 'rgba(255, 255, 255, 0.3)';
+                ctx.lineWidth = 2;
+                ctx.beginPath();
+                ctx.moveTo(player.x + player.width / 2, player.y + player.height / 2);
+                ctx.lineTo(
+                    player.x + player.width / 2 - player.vx * 3,
+                    player.y + player.height / 2 - player.vy * 2
+                );
+                ctx.stroke();
+            }
+        }
+
+        // 控制設定
+        function setupControls() {
+            document.addEventListener('keydown', (e) => {
+                keys[e.key] = true;
+
+                if ((e.key === ' ' || e.key === 'w' || e.key === 'ArrowUp') && player.grounded) {
+                    player.vy = JUMP_FORCE;
+                }
+            });
+
+            document.addEventListener('keyup', (e) => {
+                keys[e.key] = false;
+            });
+        }
+
+        // 啟動
+        window.addEventListener('load', init);
+    </script>
+</body>
+</html>
