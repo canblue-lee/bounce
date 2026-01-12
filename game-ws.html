@@ -13,7 +13,7 @@
 
         body {
             overflow: hidden;
-            background: #1a1a2e;
+            background: #000;  /* 黑色背景 */
             font-family: Arial, sans-serif;
             touch-action: none;
             user-select: none;
@@ -31,7 +31,7 @@
             display: block;
             width: 100%;
             height: 100%;
-            background: linear-gradient(to bottom, #87CEEB 0%, #98D8E8 100%);
+            background: transparent;  /* 透明背景! */
         }
 
         .game-info {
@@ -557,68 +557,51 @@
             const ctx = canvas.getContext('2d');
             const char = gameState.character;
             
-            ctx.fillStyle = '#87CEEB';
-            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            // 🎯 清空畫面 - 完全透明!
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
             
-            // 雲朵
-            ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
-            const time = Date.now() / 1000;
-            for (let i = 0; i < 3; i++) {
-                const x = ((time * 20 + i * 300) % (canvas.width + 200)) - 100;
-                const y = 100 + i * 100;
-                ctx.beginPath();
-                ctx.arc(x, y, 40, 0, Math.PI * 2);
-                ctx.arc(x + 30, y, 50, 0, Math.PI * 2);
-                ctx.arc(x + 60, y, 40, 0, Math.PI * 2);
-                ctx.fill();
-            }
+            // 只繪製平台和角色,不繪製背景!
             
-            // 平台
+            // 平台 (掃描的物體)
             gameState.platforms.forEach(platform => {
                 if (platform.isScanned) {
-                    // 真實掃描物體 - 半透明粉紅色
-                    ctx.fillStyle = 'rgba(255, 0, 255, 0.6)';
+                    // 真實掃描物體 - 半透明粉紅色輪廓
                     ctx.strokeStyle = '#ff00ff';
                     ctx.lineWidth = 4;
-                    
-                    // 繪製平台
-                    ctx.fillRect(platform.x, platform.y, platform.width, platform.height);
+                    ctx.setLineDash([10, 5]);  // 虛線效果
                     ctx.strokeRect(platform.x, platform.y, platform.width, platform.height);
+                    ctx.setLineDash([]);  // 重置
                     
                     // 物體標籤
                     if (platform.name) {
                         ctx.fillStyle = '#ff00ff';
-                        ctx.font = 'bold 16px Arial';
-                        ctx.fillText(platform.name, platform.x + 5, platform.y - 5);
+                        ctx.font = 'bold 20px Arial';
+                        ctx.shadowColor = '#000';
+                        ctx.shadowBlur = 5;
+                        ctx.fillText(platform.name, platform.x + 5, platform.y - 10);
+                        ctx.shadowBlur = 0;
                     }
                 } else {
-                    // 預設平台 - 橘色
-                    ctx.fillStyle = '#e67e22';
+                    // 預設平台 - 橘色實心
+                    ctx.fillStyle = 'rgba(230, 126, 34, 0.8)';
+                    ctx.fillRect(platform.x, platform.y, platform.width, platform.height);
+                    
                     ctx.strokeStyle = '#d35400';
                     ctx.lineWidth = 3;
-                    ctx.fillRect(platform.x, platform.y, platform.width, platform.height);
                     ctx.strokeRect(platform.x, platform.y, platform.width, platform.height);
                 }
             });
             
-            // 地面
-            ctx.fillStyle = '#2ecc71';
-            ctx.fillRect(0, gameState.ground, canvas.width, canvas.height - gameState.ground);
-            
-            ctx.fillStyle = '#27ae60';
-            for (let i = 0; i < canvas.width; i += 20) {
-                ctx.fillRect(i, gameState.ground, 10, 5);
-            }
-            
-            // 角色
+            // 繪製角色 (帶陰影效果)
             drawCharacter(ctx, char.x, char.y, char.size);
             
+            // 分數顯示
             document.getElementById('displayScore').textContent = gameState.score;
         }
 
         function drawCharacter(ctx, x, y, size) {
-            // 陰影
-            ctx.fillStyle = 'rgba(0, 0, 0, 0.2)';
+            // 陰影 (投射在虛擬地面)
+            ctx.fillStyle = 'rgba(0, 0, 0, 0.4)';
             ctx.beginPath();
             ctx.ellipse(x, gameState.ground - 3, size * 0.5, size * 0.15, 0, 0, Math.PI * 2);
             ctx.fill();
