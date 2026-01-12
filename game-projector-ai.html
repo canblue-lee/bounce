@@ -284,6 +284,42 @@
                 case 'startGame':
                     startGame();
                     break;
+
+                case 'control':
+                    // 處理遙控器輸入
+                    handleControlInput(message);
+                    break;
+            }
+        }
+
+        // 處理遙控器輸入
+        function handleControlInput(message) {
+            const key = message.key;
+            const pressed = message.pressed;
+
+            // 方向控制
+            if (key === 'left') {
+                keys['a'] = pressed;
+                keys['ArrowLeft'] = pressed;
+            } else if (key === 'right') {
+                keys['d'] = pressed;
+                keys['ArrowRight'] = pressed;
+            } else if (key === 'up') {
+                keys['w'] = pressed;
+                keys['ArrowUp'] = pressed;
+            } else if (key === 'down') {
+                keys['s'] = pressed;
+                keys['ArrowDown'] = pressed;
+            }
+
+            // 跳躍 (X 按鈕或 jump)
+            if ((key === 'jump' || key === 'x') && pressed && player.grounded) {
+                player.vy = JUMP_FORCE;
+            }
+
+            // 空白鍵跳躍
+            if (key === ' ' && pressed && player.grounded) {
+                player.vy = JUMP_FORCE;
             }
         }
 
