@@ -2,110 +2,618 @@
 <html lang="zh-TW">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-select=none">
-    <title>投影遊戲 - WebSocket 最終版</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>投影遊戲 - WebSocket 版</title>
     <style>
-        * { margin: 0; padding: 0; box-sizing: border-box; }
-        body { overflow: hidden; background: #1a1a2e; font-family: Arial, sans-serif; touch-action: none; user-select: none; }
-        .mode-selector { display: flex; flex-direction: column; align-items: center; justify-content: center; width: 100vw; height: 100vh; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; }
-        .mode-button { padding: 30px 50px; font-size: 24px; background: white; color: #667eea; border: none; border-radius: 50px; cursor: pointer; font-weight: bold; margin: 15px; box-shadow: 0 10px 20px rgba(0,0,0,0.2); }
-        .game-display, .controller { display: none; width: 100vw; height: 100vh; position: relative; }
-        #gameCanvas { display: block; width: 100%; height: 100%; background: #87CEEB; }
-        .jump-button { width: 250px; height: 250px; border-radius: 50%; background: #e74c3c; border: 10px solid #c0392b; color: white; font-size: 50px; font-weight: bold; display: flex; align-items: center; justify-content: center; margin: auto; box-shadow: 0 15px 0 #962d22; }
-        .jump-button:active { transform: translateY(10px); box-shadow: 0 5px 0 #962d22; }
-        .status { position: absolute; top: 20px; right: 20px; color: white; padding: 10px 20px; background: rgba(0,0,0,0.6); border-radius: 20px; font-size: 14px; z-index: 100; }
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            overflow: hidden;
+            background: #1a1a2e;
+            font-family: Arial, sans-serif;
+            touch-action: none;
+            user-select: none;
+        }
+
+        /* 遊戲畫面 */
+        .game-display {
+            display: none;
+            width: 100vw;
+            height: 100vh;
+            position: relative;
+        }
+
+        #gameCanvas {
+            display: block;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(to bottom, #87CEEB 0%, #98D8E8 100%);
+        }
+
+        .game-info {
+            position: absolute;
+            top: 30px;
+            left: 30px;
+            color: white;
+            font-size: 48px;
+            font-weight: bold;
+            text-shadow: 3px 3px 6px rgba(0,0,0,0.5);
+            z-index: 10;
+        }
+
+        .connection-status {
+            position: absolute;
+            top: 30px;
+            right: 30px;
+            padding: 15px 30px;
+            background: rgba(0,0,0,0.7);
+            color: white;
+            border-radius: 10px;
+            font-size: 20px;
+            z-index: 10;
+        }
+
+        .status-dot {
+            display: inline-block;
+            width: 15px;
+            height: 15px;
+            border-radius: 50%;
+            margin-right: 10px;
+            animation: pulse 2s infinite;
+        }
+
+        .status-dot.connected {
+            background: #2ecc71;
+        }
+
+        .status-dot.disconnected {
+            background: #e74c3c;
+            animation: none;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
+        /* 控制器 */
+        .controller {
+            display: none;
+            width: 100vw;
+            height: 100vh;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            position: relative;
+        }
+
+        .controller-header {
+            text-align: center;
+            padding: 40px 20px;
+            color: white;
+        }
+
+        .controller-header h1 {
+            font-size: 32px;
+            margin-bottom: 10px;
+        }
+
+        .jump-button-container {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            text-align: center;
+        }
+
+        .jump-button {
+            width: 220px;
+            height: 220px;
+            border-radius: 50%;
+            background: linear-gradient(145deg, #ffffff, #e0e0e0);
+            box-shadow: 0 10px 30px rgba(0,0,0,0.3);
+            border: none;
+            cursor: pointer;
+            transition: all 0.1s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 70px;
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        .jump-button:active {
+            transform: scale(0.95);
+            box-shadow: 0 5px 15px rgba(0,0,0,0.3);
+        }
+
+        .jump-button .icon {
+            color: #667eea;
+            font-weight: bold;
+        }
+
+        .button-label {
+            color: white;
+            font-size: 28px;
+            margin-top: 25px;
+            font-weight: bold;
+        }
+
+        .controller-stats {
+            position: absolute;
+            bottom: 40px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(255,255,255,0.2);
+            padding: 20px 40px;
+            border-radius: 20px;
+            color: white;
+            text-align: center;
+        }
+
+        .controller-stats .score {
+            font-size: 56px;
+            font-weight: bold;
+            color: #ffd700;
+        }
+
+        /* 模式選擇器 */
+        .mode-selector {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            width: 100vw;
+            height: 100vh;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 20px;
+        }
+
+        .mode-selector h1 {
+            font-size: 36px;
+            margin-bottom: 60px;
+        }
+
+        .mode-buttons {
+            display: flex;
+            gap: 30px;
+            flex-wrap: wrap;
+            justify-content: center;
+        }
+
+        .mode-button {
+            padding: 30px 50px;
+            font-size: 24px;
+            background: white;
+            color: #667eea;
+            border: none;
+            border-radius: 15px;
+            cursor: pointer;
+            transition: transform 0.2s;
+            font-weight: bold;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+        }
+
+        .mode-button:hover {
+            transform: translateY(-5px);
+        }
+
+        .mode-button:active {
+            transform: scale(0.95);
+        }
     </style>
 </head>
 <body>
-    <div id="status" class="status">🔌 連線中...</div>
-
+    <!-- 模式選擇器 -->
     <div class="mode-selector" id="modeSelector">
         <h1>🎮 投影遊戲系統</h1>
-        <button class="mode-button" onclick="setMode('controller')">📱 手機控制器</button>
-        <button class="mode-button" onclick="setMode('display')">🖥️ 投影顯示</button>
-    </div>
-
-    <div class="controller" id="controller">
-        <div style="height: 100%; display: flex; justify-content: center; align-items: center;">
-            <div class="jump-button" id="jumpButton">JUMP</div>
+        <div class="mode-buttons">
+            <button class="mode-button" onclick="setMode('controller')">
+                📱 手機控制器
+            </button>
+            <button class="mode-button" onclick="setMode('display')">
+                🖥️ 投影顯示
+            </button>
         </div>
     </div>
 
+    <!-- 控制器 -->
+    <div class="controller" id="controller">
+        <div class="controller-header">
+            <h1>🎮 遊戲控制器</h1>
+            <div class="connection-status">
+                <span class="status-dot" id="controllerStatus"></span>
+                <span id="controllerStatusText">連線中...</span>
+            </div>
+        </div>
+
+        <div class="jump-button-container">
+            <button class="jump-button" id="jumpButton">
+                <span class="icon">▲</span>
+            </button>
+            <div class="button-label">跳躍</div>
+        </div>
+
+        <div class="controller-stats">
+            <div>目前分數</div>
+            <div class="score" id="controllerScore">0</div>
+        </div>
+    </div>
+
+    <!-- 遊戲顯示 -->
     <div class="game-display" id="gameDisplay">
+        <div class="game-info">
+            分數: <span id="displayScore">0</span>
+        </div>
+        <div class="connection-status">
+            <span class="status-dot" id="displayStatus"></span>
+            <span id="displayStatusText">連線中...</span>
+        </div>
         <canvas id="gameCanvas"></canvas>
     </div>
 
     <script>
-        let mode = null, ws = null;
-        let charY = 0, velocity = 0, isJumping = false;
+        // 全域變數
+        let mode = null;
+        let ws = null;
+        let wsReconnectTimer = null;
 
+        // 遊戲狀態
+        let gameState = {
+            character: {
+                x: 400,
+                y: 0,
+                velocityY: 0,
+                size: 80,
+                isJumping: false
+            },
+            score: 0,
+            gravity: 0.8,
+            jumpForce: -18,
+            ground: 0,
+            platforms: []
+        };
+
+        // WebSocket 連線
         function connectWebSocket() {
-            const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-            const wsUrl = `${protocol}//${window.location.host}`;
+            const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+            const wsHost = window.location.hostname;
+            const wsPort = 8001;
+            const wsUrl = `${wsProtocol}//${wsHost}:${wsPort}`;
+
+            console.log('🔌 連接 WebSocket:', wsUrl);
 
             ws = new WebSocket(wsUrl);
-            ws.onopen = () => document.getElementById('status').innerText = '✅ 已連線';
-            ws.onmessage = (e) => {
-                const data = JSON.parse(e.data);
-                if (data.type === 'JUMP' && mode === 'display') jump();
+
+            ws.onopen = () => {
+                console.log('✅ WebSocket 連線成功');
+                updateConnectionStatus(true);
             };
+
+            ws.onmessage = (event) => {
+                try {
+                    const data = JSON.parse(event.data);
+                    handleMessage(data);
+                } catch (e) {
+                    console.error('訊息解析錯誤:', e);
+                }
+            };
+
             ws.onclose = () => {
-                document.getElementById('status').innerText = '❌ 斷線重連中...';
-                setTimeout(connectWebSocket, 3000);
+                console.log('❌ WebSocket 連線關閉');
+                updateConnectionStatus(false);
+                
+                // 3 秒後重連
+                wsReconnectTimer = setTimeout(() => {
+                    console.log('🔄 重新連線...');
+                    connectWebSocket();
+                }, 3000);
+            };
+
+            ws.onerror = (error) => {
+                console.error('WebSocket 錯誤:', error);
             };
         }
 
-        function setMode(m) {
-            mode = m;
-            document.getElementById('modeSelector').style.display = 'none';
-            document.getElementById(mode === 'controller' ? 'controller' : 'gameDisplay').style.display = 'block';
-            connectWebSocket();
-            if (mode === 'controller') {
-                const btn = document.getElementById('jumpButton');
-                const sendJump = (e) => { 
-                    e.preventDefault(); 
-                    if(ws && ws.readyState === 1) ws.send(JSON.stringify({type:'JUMP'})); 
-                };
-                btn.onmousedown = sendJump;
-                btn.ontouchstart = sendJump;
-            } else initGame();
+        // 處理收到的訊息
+        function handleMessage(data) {
+            console.log('📨 收到訊息:', data.type);
+
+            if (data.type === 'JUMP') {
+                if (mode === 'display') {
+                    performJump();
+                }
+            } else if (data.type === 'GAME_STATE') {
+                if (mode === 'controller') {
+                    document.getElementById('controllerScore').textContent = data.score;
+                }
+            }
         }
 
-        function initGame() {
+        // 發送訊息
+        function sendMessage(data) {
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify(data));
+                console.log('📤 發送訊息:', data.type);
+            } else {
+                console.warn('⚠️ WebSocket 未連線');
+            }
+        }
+
+        // 更新連線狀態
+        function updateConnectionStatus(connected) {
+            const devices = mode === 'controller' ? 
+                ['controllerStatus', 'controllerStatusText'] : 
+                ['displayStatus', 'displayStatusText'];
+
+            const [dotId, textId] = devices;
+            const dot = document.getElementById(dotId);
+            const text = document.getElementById(textId);
+
+            if (dot && text) {
+                if (connected) {
+                    dot.className = 'status-dot connected';
+                    text.textContent = '已連線';
+                } else {
+                    dot.className = 'status-dot disconnected';
+                    text.textContent = '連線中...';
+                }
+            }
+        }
+
+        // 初始化
+        function init() {
+            console.log('🎮 遊戲系統啟動');
+            
+            const urlParams = new URLSearchParams(window.location.search);
+            const urlMode = urlParams.get('mode');
+            
+            if (urlMode === 'controller' || urlMode === 'display') {
+                setMode(urlMode);
+            }
+        }
+
+        // 設定模式
+        function setMode(selectedMode) {
+            console.log('設定模式:', selectedMode);
+            mode = selectedMode;
+            
+            document.getElementById('modeSelector').style.display = 'none';
+            
+            // 連接 WebSocket
+            connectWebSocket();
+            
+            if (mode === 'controller') {
+                setupController();
+            } else if (mode === 'display') {
+                setupDisplay();
+            }
+        }
+
+        // 控制器設定
+        function setupController() {
+            console.log('✅ 控制器模式啟動');
+            document.getElementById('controller').style.display = 'block';
+            
+            const jumpButton = document.getElementById('jumpButton');
+            
+            const handleJump = (e) => {
+                e.preventDefault();
+                
+                // 視覺回饋
+                jumpButton.style.transform = 'scale(0.95)';
+                setTimeout(() => {
+                    jumpButton.style.transform = 'scale(1)';
+                }, 150);
+
+                // 發送跳躍指令
+                sendMessage({
+                    type: 'JUMP',
+                    timestamp: Date.now()
+                });
+
+                // 震動
+                if (navigator.vibrate) {
+                    navigator.vibrate(50);
+                }
+            };
+            
+            jumpButton.addEventListener('touchstart', handleJump);
+            jumpButton.addEventListener('click', handleJump);
+        }
+
+        // 顯示器設定
+        function setupDisplay() {
+            console.log('✅ 顯示器模式啟動');
+            document.getElementById('gameDisplay').style.display = 'block';
+            
             const canvas = document.getElementById('gameCanvas');
             const ctx = canvas.getContext('2d');
-            canvas.width = window.innerWidth;
-            canvas.height = window.innerHeight;
-            charY = canvas.height - 100;
+            
+            function resizeCanvas() {
+                canvas.width = window.innerWidth;
+                canvas.height = window.innerHeight;
+                gameState.ground = canvas.height - 100;
+                initPlatforms();
+            }
+            
+            resizeCanvas();
+            window.addEventListener('resize', resizeCanvas);
+            
+            // 定期發送遊戲狀態
+            setInterval(() => {
+                sendMessage({
+                    type: 'GAME_STATE',
+                    score: gameState.score,
+                    timestamp: Date.now()
+                });
+            }, 500);
+            
+            gameLoop();
+        }
 
-            function loop() {
-                ctx.clearRect(0, 0, canvas.width, canvas.height);
-                // 簡易重力
-                velocity += 0.8; 
-                charY += velocity;
-                // 碰地檢測
-                if (charY > canvas.height - 100) { 
-                    charY = canvas.height - 100; 
-                    velocity = 0; 
-                    isJumping = false; 
+        function performJump() {
+            console.log('🦘 角色跳躍!');
+            const char = gameState.character;
+            
+            if (!char.isJumping || char.y >= gameState.ground - char.size - 5) {
+                char.velocityY = gameState.jumpForce;
+                char.isJumping = true;
+                gameState.score += 10;
+            }
+        }
+
+        function initPlatforms() {
+            gameState.platforms = [];
+            const canvas = document.getElementById('gameCanvas');
+            
+            for (let i = 0; i < 6; i++) {
+                gameState.platforms.push({
+                    x: (canvas.width / 7) * (i + 1),
+                    y: gameState.ground - 200 - Math.sin(i * 0.5) * 100,
+                    width: 120,
+                    height: 25
+                });
+            }
+        }
+
+        function updatePhysics() {
+            const char = gameState.character;
+            
+            char.velocityY += gameState.gravity;
+            char.y += char.velocityY;
+            
+            if (char.y >= gameState.ground - char.size) {
+                char.y = gameState.ground - char.size;
+                char.velocityY = 0;
+                char.isJumping = false;
+            }
+            
+            gameState.platforms.forEach(platform => {
+                if (char.velocityY > 0 && 
+                    char.x > platform.x - char.size/2 &&
+                    char.x < platform.x + platform.width - char.size/2 &&
+                    char.y + char.size > platform.y &&
+                    char.y + char.size < platform.y + platform.height + 20) {
+                    
+                    char.y = platform.y - char.size;
+                    char.velocityY = 0;
+                    char.isJumping = false;
                 }
-                // 畫地板
-                ctx.fillStyle = '#2ecc71';
-                ctx.fillRect(0, canvas.height - 50, canvas.width, 50);
-                // 畫角色
-                ctx.fillStyle = '#e74c3c'; 
-                ctx.fillRect(canvas.width/2 - 25, charY - 50, 50, 50);
-                requestAnimationFrame(loop);
-            }
-            loop();
+            });
+            
+            char.x += Math.sin(Date.now() / 2000) * 3;
+            
+            const canvas = document.getElementById('gameCanvas');
+            if (char.x < char.size/2) char.x = char.size/2;
+            if (char.x > canvas.width - char.size/2) char.x = canvas.width - char.size/2;
         }
 
-        function jump() {
-            if (!isJumping) {
-                velocity = -18;
-                isJumping = true;
+        function draw() {
+            const canvas = document.getElementById('gameCanvas');
+            const ctx = canvas.getContext('2d');
+            const char = gameState.character;
+            
+            ctx.fillStyle = '#87CEEB';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            
+            // 雲朵
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
+            const time = Date.now() / 1000;
+            for (let i = 0; i < 3; i++) {
+                const x = ((time * 20 + i * 300) % (canvas.width + 200)) - 100;
+                const y = 100 + i * 100;
+                ctx.beginPath();
+                ctx.arc(x, y, 40, 0, Math.PI * 2);
+                ctx.arc(x + 30, y, 50, 0, Math.PI * 2);
+                ctx.arc(x + 60, y, 40, 0, Math.PI * 2);
+                ctx.fill();
             }
+            
+            // 平台
+            ctx.fillStyle = '#e67e22';
+            ctx.strokeStyle = '#d35400';
+            ctx.lineWidth = 3;
+            gameState.platforms.forEach(platform => {
+                ctx.fillRect(platform.x, platform.y, platform.width, platform.height);
+                ctx.strokeRect(platform.x, platform.y, platform.width, platform.height);
+            });
+            
+            // 地面
+            ctx.fillStyle = '#2ecc71';
+            ctx.fillRect(0, gameState.ground, canvas.width, canvas.height - gameState.ground);
+            
+            ctx.fillStyle = '#27ae60';
+            for (let i = 0; i < canvas.width; i += 20) {
+                ctx.fillRect(i, gameState.ground, 10, 5);
+            }
+            
+            // 角色
+            drawCharacter(ctx, char.x, char.y, char.size);
+            
+            document.getElementById('displayScore').textContent = gameState.score;
         }
+
+        function drawCharacter(ctx, x, y, size) {
+            // 陰影
+            ctx.fillStyle = 'rgba(0, 0, 0, 0.2)';
+            ctx.beginPath();
+            ctx.ellipse(x, gameState.ground - 3, size * 0.5, size * 0.15, 0, 0, Math.PI * 2);
+            ctx.fill();
+            
+            // 身體
+            ctx.fillStyle = '#e74c3c';
+            ctx.beginPath();
+            ctx.arc(x, y + size * 0.35, size * 0.45, 0, Math.PI * 2);
+            ctx.fill();
+            
+            // 腰帶
+            ctx.fillStyle = '#34495e';
+            ctx.fillRect(x - size * 0.45, y + size * 0.35, size * 0.9, size * 0.15);
+            
+            // 頭
+            ctx.fillStyle = '#ffd7b5';
+            ctx.beginPath();
+            ctx.arc(x, y, size * 0.35, 0, Math.PI * 2);
+            ctx.fill();
+            
+            // 帽子
+            ctx.fillStyle = '#c0392b';
+            ctx.beginPath();
+            ctx.moveTo(x - size * 0.35, y - size * 0.05);
+            ctx.lineTo(x + size * 0.35, y - size * 0.05);
+            ctx.lineTo(x - size * 0.1, y - size * 0.5);
+            ctx.closePath();
+            ctx.fill();
+            
+            ctx.fillStyle = 'white';
+            ctx.fillRect(x - size * 0.35, y - size * 0.05, size * 0.7, size * 0.1);
+            
+            ctx.beginPath();
+            ctx.arc(x - size * 0.1, y - size * 0.5, size * 0.12, 0, Math.PI * 2);
+            ctx.fill();
+            
+            // 眼睛
+            ctx.fillStyle = 'black';
+            ctx.beginPath();
+            ctx.arc(x - size * 0.12, y - size * 0.05, size * 0.06, 0, Math.PI * 2);
+            ctx.arc(x + size * 0.12, y - size * 0.05, size * 0.06, 0, Math.PI * 2);
+            ctx.fill();
+        }
+
+        function gameLoop() {
+            updatePhysics();
+            draw();
+            requestAnimationFrame(gameLoop);
+        }
+
+        // 啟動
+        init();
+        
+        console.log('%c🎮 投影遊戲系統 - WebSocket 版已載入', 'font-size: 20px; color: #667eea; font-weight: bold;');
     </script>
 </body>
 </html>
