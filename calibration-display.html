@@ -1,0 +1,345 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>投影校正 - 顯示模式</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            overflow: hidden;
+            background: #000;
+            font-family: Arial, sans-serif;
+        }
+
+        /* 全螢幕校正畫面 */
+        .calibration-screen {
+            width: 100vw;
+            height: 100vh;
+            background: #1a1a2e;
+            position: relative;
+        }
+
+        /* 校正點 */
+        .calibration-point {
+            position: absolute;
+            width: 80px;
+            height: 80px;
+            background: #00ff88;
+            border-radius: 50%;
+            border: 5px solid #fff;
+            box-shadow: 
+                0 0 30px #00ff88,
+                inset 0 0 20px rgba(255, 255, 255, 0.5);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 32px;
+            font-weight: bold;
+            color: #000;
+            animation: pulse 2s ease-in-out infinite;
+            z-index: 10;
+        }
+
+        @keyframes pulse {
+            0%, 100% {
+                transform: scale(1);
+                box-shadow: 0 0 30px #00ff88;
+            }
+            50% {
+                transform: scale(1.1);
+                box-shadow: 0 0 60px #00ff88;
+            }
+        }
+
+        /* 4 個角的位置 */
+        .point-1 {
+            top: 50px;
+            left: 50px;
+        }
+
+        .point-2 {
+            top: 50px;
+            right: 50px;
+        }
+
+        .point-3 {
+            bottom: 50px;
+            left: 50px;
+        }
+
+        .point-4 {
+            bottom: 50px;
+            right: 50px;
+        }
+
+        /* 連接線 */
+        .calibration-border {
+            position: absolute;
+            top: 85px;
+            left: 85px;
+            right: 85px;
+            bottom: 85px;
+            border: 3px dashed #00ff88;
+            opacity: 0.5;
+        }
+
+        /* 中心十字 */
+        .center-cross {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 100px;
+            height: 100px;
+        }
+
+        .center-cross::before,
+        .center-cross::after {
+            content: '';
+            position: absolute;
+            background: #00ff88;
+        }
+
+        .center-cross::before {
+            top: 50%;
+            left: 0;
+            width: 100%;
+            height: 2px;
+            transform: translateY(-50%);
+        }
+
+        .center-cross::after {
+            left: 50%;
+            top: 0;
+            width: 2px;
+            height: 100%;
+            transform: translateX(-50%);
+        }
+
+        /* 指示文字 */
+        .instruction {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            text-align: center;
+            color: white;
+            margin-top: 80px;
+            background: rgba(0, 0, 0, 0.8);
+            padding: 30px 50px;
+            border-radius: 20px;
+            backdrop-filter: blur(10px);
+        }
+
+        .instruction h1 {
+            font-size: 36px;
+            color: #00ff88;
+            margin-bottom: 20px;
+        }
+
+        .instruction p {
+            font-size: 20px;
+            line-height: 1.6;
+            opacity: 0.9;
+        }
+
+        .instruction .step {
+            margin: 15px 0;
+            padding: 10px;
+            background: rgba(0, 255, 136, 0.1);
+            border-radius: 10px;
+        }
+
+        /* QR Code 區域 */
+        .qr-section {
+            position: absolute;
+            bottom: 30px;
+            left: 50%;
+            transform: translateX(-50%);
+            text-align: center;
+            background: rgba(0, 0, 0, 0.9);
+            padding: 20px 30px;
+            border-radius: 15px;
+        }
+
+        .qr-section h3 {
+            color: #00ff88;
+            margin-bottom: 15px;
+            font-size: 18px;
+        }
+
+        #qrcode {
+            background: white;
+            padding: 10px;
+            border-radius: 10px;
+            display: inline-block;
+        }
+
+        .url-text {
+            color: #00ff88;
+            margin-top: 10px;
+            font-size: 14px;
+            font-family: monospace;
+        }
+
+        /* 角落資訊 */
+        .corner-info {
+            position: absolute;
+            padding: 20px;
+            color: #00ff88;
+            font-size: 18px;
+            font-weight: bold;
+            background: rgba(0, 0, 0, 0.7);
+            border-radius: 10px;
+        }
+
+        .info-1 { top: 150px; left: 70px; }
+        .info-2 { top: 150px; right: 70px; }
+        .info-3 { bottom: 150px; left: 70px; }
+        .info-4 { bottom: 150px; right: 70px; }
+
+        /* 校正 ID */
+        .calibration-id {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            background: rgba(0, 0, 0, 0.8);
+            padding: 15px 25px;
+            border-radius: 10px;
+            color: white;
+            font-size: 16px;
+        }
+
+        .calibration-id span {
+            color: #00ff88;
+            font-weight: bold;
+            font-size: 20px;
+        }
+    </style>
+    
+    <!-- QR Code 生成庫 -->
+    <script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
+</head>
+<body>
+    <div class="calibration-screen">
+        <!-- 4 個校正點 -->
+        <div class="calibration-point point-1">1</div>
+        <div class="calibration-point point-2">2</div>
+        <div class="calibration-point point-3">3</div>
+        <div class="calibration-point point-4">4</div>
+
+        <!-- 連接框 -->
+        <div class="calibration-border"></div>
+
+        <!-- 中心十字 -->
+        <div class="center-cross"></div>
+
+        <!-- 角落資訊 -->
+        <div class="corner-info info-1">← 點 1</div>
+        <div class="corner-info info-2">點 2 →</div>
+        <div class="corner-info info-3">← 點 3</div>
+        <div class="corner-info info-4">點 4 →</div>
+
+        <!-- 指示文字 -->
+        <div class="instruction">
+            <h1>📐 投影校正模式</h1>
+            <div class="step">
+                <strong>步驟 1:</strong> 確保 4 個綠色圓點清楚投影在牆上
+            </div>
+            <div class="step">
+                <strong>步驟 2:</strong> 用手機掃描下方 QR Code
+            </div>
+            <div class="step">
+                <strong>步驟 3:</strong> 在手機上依序拍照標記 4 個點
+            </div>
+        </div>
+
+        <!-- QR Code -->
+        <div class="qr-section">
+            <h3>📱 手機掃描此 QR Code 進行校正</h3>
+            <div id="qrcode"></div>
+            <div class="url-text" id="calibrationUrl">載入中...</div>
+        </div>
+
+        <!-- 校正 ID -->
+        <div class="calibration-id">
+            校正 ID: <span id="calibrationSessionId">-</span>
+        </div>
+    </div>
+
+    <script>
+        // 生成唯一的校正 Session ID
+        const sessionId = 'CAL_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+        document.getElementById('calibrationSessionId').textContent = sessionId;
+
+        // 儲存校正 Session
+        localStorage.setItem('calibrationSessionId', sessionId);
+
+        // 生成手機校正頁面網址
+        const baseUrl = window.location.origin;
+        const calibrationUrl = `${baseUrl}/calibration-capture.html?session=${sessionId}`;
+        
+        document.getElementById('calibrationUrl').textContent = calibrationUrl;
+
+        // 生成 QR Code
+        new QRCode(document.getElementById('qrcode'), {
+            text: calibrationUrl,
+            width: 200,
+            height: 200,
+            colorDark: '#000000',
+            colorLight: '#ffffff',
+            correctLevel: QRCode.CorrectLevel.H
+        });
+
+        // 儲存校正點的螢幕座標
+        const calibrationPoints = {
+            sessionId: sessionId,
+            displayPoints: {
+                point1: { x: 50, y: 50 },
+                point2: { x: window.innerWidth - 50, y: 50 },
+                point3: { x: 50, y: window.innerHeight - 50 },
+                point4: { x: window.innerWidth - 50, y: window.innerHeight - 50 }
+            },
+            timestamp: Date.now(),
+            screenWidth: window.innerWidth,
+            screenHeight: window.innerHeight
+        };
+
+        localStorage.setItem('calibrationDisplayPoints', JSON.stringify(calibrationPoints));
+
+        console.log('📐 校正模式啟動');
+        console.log('Session ID:', sessionId);
+        console.log('顯示點座標:', calibrationPoints.displayPoints);
+        console.log('手機掃描網址:', calibrationUrl);
+
+        // 全螢幕
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'f' || e.key === 'F') {
+                if (!document.fullscreenElement) {
+                    document.documentElement.requestFullscreen();
+                } else {
+                    document.exitFullscreen();
+                }
+            }
+        });
+
+        // 監聽校正完成
+        window.addEventListener('storage', (e) => {
+            if (e.key === `calibrationResult_${sessionId}`) {
+                console.log('✅ 手機校正完成!');
+                const result = JSON.parse(e.newValue);
+                console.log('校正結果:', result);
+                
+                // 顯示完成訊息
+                alert('✅ 校正完成!\n可以開始掃描障礙物了');
+            }
+        });
+    </script>
+</body>
+</html>

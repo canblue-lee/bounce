@@ -1,0 +1,469 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>手機校正 - 拍攝模式</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            overflow: hidden;
+            background: #000;
+            font-family: Arial, sans-serif;
+            touch-action: none;
+        }
+
+        /* 相機預覽 */
+        #video {
+            position: absolute;
+            width: 100vw;
+            height: 100vh;
+            object-fit: cover;
+        }
+
+        /* Canvas 覆蓋層 */
+        #canvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            pointer-events: none;
+            z-index: 10;
+        }
+
+        /* UI 覆蓋層 */
+        .ui-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            z-index: 20;
+            pointer-events: none;
+        }
+
+        /* 頂部狀態 */
+        .top-bar {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            padding: 20px;
+            background: linear-gradient(to bottom, rgba(0,0,0,0.9), transparent);
+            pointer-events: all;
+        }
+
+        .status {
+            background: rgba(0, 0, 0, 0.8);
+            padding: 15px 20px;
+            border-radius: 15px;
+            color: white;
+            text-align: center;
+            backdrop-filter: blur(10px);
+        }
+
+        .status h2 {
+            color: #00ff88;
+            font-size: 20px;
+            margin-bottom: 8px;
+        }
+
+        .status p {
+            font-size: 14px;
+            opacity: 0.9;
+        }
+
+        /* 當前點指示 */
+        .current-point {
+            position: absolute;
+            top: 120px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(0, 255, 136, 0.95);
+            color: #000;
+            padding: 20px 40px;
+            border-radius: 50px;
+            font-size: 24px;
+            font-weight: bold;
+            box-shadow: 0 10px 30px rgba(0, 255, 136, 0.5);
+            animation: bounce 1s ease-in-out infinite;
+        }
+
+        @keyframes bounce {
+            0%, 100% { transform: translateX(-50%) translateY(0); }
+            50% { transform: translateX(-50%) translateY(-10px); }
+        }
+
+        /* 已標記的點 */
+        .marked-point {
+            position: absolute;
+            width: 40px;
+            height: 40px;
+            border: 4px solid #00ff88;
+            border-radius: 50%;
+            background: rgba(0, 255, 136, 0.3);
+            pointer-events: none;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #00ff88;
+            font-weight: bold;
+            font-size: 18px;
+            box-shadow: 0 0 20px #00ff88;
+            animation: ping 1.5s ease-in-out infinite;
+        }
+
+        @keyframes ping {
+            0%, 100% { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+            50% { opacity: 0.5; transform: translate(-50%, -50%) scale(1.2); }
+        }
+
+        /* 進度條 */
+        .progress-bar {
+            position: absolute;
+            bottom: 200px;
+            left: 20px;
+            right: 20px;
+            height: 10px;
+            background: rgba(255, 255, 255, 0.2);
+            border-radius: 10px;
+            overflow: hidden;
+        }
+
+        .progress-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #00ff88, #00d4ff);
+            transition: width 0.3s;
+            box-shadow: 0 0 20px #00ff88;
+        }
+
+        /* 底部控制 */
+        .bottom-controls {
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            padding: 20px;
+            background: linear-gradient(to top, rgba(0,0,0,0.9), transparent);
+            pointer-events: all;
+        }
+
+        .instruction-text {
+            color: white;
+            text-align: center;
+            margin-bottom: 20px;
+            font-size: 16px;
+            line-height: 1.5;
+        }
+
+        .btn {
+            width: 100%;
+            padding: 18px;
+            font-size: 18px;
+            font-weight: bold;
+            border: none;
+            border-radius: 50px;
+            cursor: pointer;
+            margin: 10px 0;
+            box-shadow: 0 5px 20px rgba(0, 0, 0, 0.4);
+            transition: all 0.3s;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, #00ff88, #00d4ff);
+            color: #000;
+        }
+
+        .btn:active {
+            transform: scale(0.98);
+        }
+
+        /* 成功畫面 */
+        .success-screen {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.95);
+            display: none;
+            align-items: center;
+            justify-content: center;
+            z-index: 100;
+        }
+
+        .success-content {
+            text-align: center;
+            color: white;
+        }
+
+        .success-icon {
+            font-size: 80px;
+            margin-bottom: 20px;
+            animation: bounceIn 0.5s;
+        }
+
+        @keyframes bounceIn {
+            0% { transform: scale(0); }
+            50% { transform: scale(1.2); }
+            100% { transform: scale(1); }
+        }
+    </style>
+</head>
+<body>
+    <!-- 相機預覽 -->
+    <video id="video" autoplay playsinline></video>
+
+    <!-- Canvas -->
+    <canvas id="canvas"></canvas>
+
+    <!-- UI 覆蓋層 -->
+    <div class="ui-overlay">
+        <!-- 頂部狀態 -->
+        <div class="top-bar">
+            <div class="status">
+                <h2>📸 校正拍攝模式</h2>
+                <p>點擊畫面標記投影的綠色圓點</p>
+            </div>
+        </div>
+
+        <!-- 當前點 -->
+        <div class="current-point" id="currentPoint">
+            請標記: 點 1 (左上)
+        </div>
+
+        <!-- 已標記的點容器 -->
+        <div id="markedPoints"></div>
+
+        <!-- 進度條 -->
+        <div class="progress-bar">
+            <div class="progress-fill" id="progressFill" style="width: 0%"></div>
+        </div>
+    </div>
+
+    <!-- 底部控制 -->
+    <div class="bottom-controls">
+        <div class="instruction-text" id="instructionText">
+            👆 點擊畫面中的綠色圓點位置
+        </div>
+        <button class="btn btn-primary" id="resetBtn" onclick="resetCalibration()">
+            🔄 重新標記
+        </button>
+    </div>
+
+    <!-- 成功畫面 -->
+    <div class="success-screen" id="successScreen">
+        <div class="success-content">
+            <div class="success-icon">✅</div>
+            <h1>校正完成!</h1>
+            <p>變換矩陣已計算並儲存</p>
+        </div>
+    </div>
+
+    <script>
+        // 全域變數
+        let video, canvas, ctx;
+        let capturedPoints = [];
+        let sessionId = null;
+        
+        const pointNames = [
+            '點 1 (左上)',
+            '點 2 (右上)',
+            '點 3 (左下)',
+            '點 4 (右下)'
+        ];
+
+        // 初始化
+        async function init() {
+            console.log('📸 手機校正模式啟動');
+
+            // 取得 Session ID
+            const urlParams = new URLSearchParams(window.location.search);
+            sessionId = urlParams.get('session');
+            
+            if (!sessionId) {
+                alert('錯誤: 找不到校正 Session ID');
+                return;
+            }
+
+            console.log('Session ID:', sessionId);
+
+            video = document.getElementById('video');
+            canvas = document.getElementById('canvas');
+            ctx = canvas.getContext('2d');
+
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+
+            // 啟動相機
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({
+                    video: {
+                        facingMode: 'environment',
+                        width: { ideal: 1920 },
+                        height: { ideal: 1080 }
+                    }
+                });
+
+                video.srcObject = stream;
+                console.log('✅ 相機啟動成功');
+
+            } catch (error) {
+                console.error('❌ 相機啟動失敗:', error);
+                alert('無法啟動相機,請檢查權限');
+            }
+        }
+
+        // 點擊標記點
+        canvas.addEventListener('click', (e) => {
+            if (capturedPoints.length >= 4) return;
+
+            const rect = canvas.getBoundingClientRect();
+            const x = e.clientX - rect.left;
+            const y = e.clientY - rect.top;
+
+            // 儲存點
+            capturedPoints.push({
+                x: x,
+                y: y,
+                screenX: (x / canvas.width) * 100,
+                screenY: (y / canvas.height) * 100
+            });
+
+            console.log(`✅ 標記點 ${capturedPoints.length}:`, { x, y });
+
+            // 顯示標記
+            addMarker(x, y, capturedPoints.length);
+
+            // 更新進度
+            updateProgress();
+
+            // 檢查是否完成
+            if (capturedPoints.length === 4) {
+                completeCalibration();
+            } else {
+                updateInstruction();
+            }
+        });
+
+        // 添加標記
+        function addMarker(x, y, number) {
+            const marker = document.createElement('div');
+            marker.className = 'marked-point';
+            marker.style.left = x + 'px';
+            marker.style.top = y + 'px';
+            marker.textContent = number;
+            document.getElementById('markedPoints').appendChild(marker);
+        }
+
+        // 更新進度
+        function updateProgress() {
+            const progress = (capturedPoints.length / 4) * 100;
+            document.getElementById('progressFill').style.width = progress + '%';
+        }
+
+        // 更新指示
+        function updateInstruction() {
+            const nextIndex = capturedPoints.length;
+            document.getElementById('currentPoint').textContent = 
+                `請標記: ${pointNames[nextIndex]}`;
+        }
+
+        // 完成校正
+        function completeCalibration() {
+            console.log('🎉 校正完成!');
+
+            // 取得投影顯示的點座標
+            const displayData = JSON.parse(localStorage.getItem('calibrationDisplayPoints'));
+            
+            if (!displayData || displayData.sessionId !== sessionId) {
+                alert('錯誤: 找不到投影顯示座標');
+                return;
+            }
+
+            // 組合校正資料
+            const calibrationData = {
+                sessionId: sessionId,
+                timestamp: Date.now(),
+                displayPoints: displayData.displayPoints,
+                capturedPoints: {
+                    point1: capturedPoints[0],
+                    point2: capturedPoints[1],
+                    point3: capturedPoints[2],
+                    point4: capturedPoints[3]
+                },
+                screenSize: {
+                    width: canvas.width,
+                    height: canvas.height
+                }
+            };
+
+            // 計算變換矩陣
+            const matrix = calculateTransformMatrix(calibrationData);
+            calibrationData.transformMatrix = matrix;
+
+            // 儲存
+            localStorage.setItem('calibrationData', JSON.stringify(calibrationData));
+            localStorage.setItem(`calibrationResult_${sessionId}`, JSON.stringify(calibrationData));
+
+            console.log('✅ 校正資料已儲存:', calibrationData);
+
+            // 顯示完成畫面
+            document.getElementById('successScreen').style.display = 'flex';
+
+            // 3 秒後跳轉到掃描頁面
+            setTimeout(() => {
+                window.location.href = '/space-scan-ai.html';
+            }, 3000);
+        }
+
+        // 計算變換矩陣 (簡化版)
+        function calculateTransformMatrix(data) {
+            // 這裡使用簡化的線性變換
+            // 專業版應該使用 OpenCV 的 getPerspectiveTransform
+            
+            const src = [
+                [data.capturedPoints.point1.x, data.capturedPoints.point1.y],
+                [data.capturedPoints.point2.x, data.capturedPoints.point2.y],
+                [data.capturedPoints.point3.x, data.capturedPoints.point3.y],
+                [data.capturedPoints.point4.x, data.capturedPoints.point4.y]
+            ];
+
+            const dst = [
+                [data.displayPoints.point1.x, data.displayPoints.point1.y],
+                [data.displayPoints.point2.x, data.displayPoints.point2.y],
+                [data.displayPoints.point3.x, data.displayPoints.point3.y],
+                [data.displayPoints.point4.x, data.displayPoints.point4.y]
+            ];
+
+            // 簡化的變換矩陣 (實際應該用 perspective transform)
+            return {
+                type: 'perspective',
+                srcPoints: src,
+                dstPoints: dst,
+                scaleX: (dst[1][0] - dst[0][0]) / (src[1][0] - src[0][0]),
+                scaleY: (dst[2][1] - dst[0][1]) / (src[2][1] - src[0][1]),
+                offsetX: dst[0][0] - src[0][0],
+                offsetY: dst[0][1] - src[0][1]
+            };
+        }
+
+        // 重置
+        function resetCalibration() {
+            capturedPoints = [];
+            document.getElementById('markedPoints').innerHTML = '';
+            updateProgress();
+            updateInstruction();
+        }
+
+        // 啟動
+        window.addEventListener('load', init);
+    </script>
+</body>
+</html>
