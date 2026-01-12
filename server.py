@@ -1,469 +1,245 @@
-async def handle_projection(request):
-    html_content = """
-<!DOCTYPE html>
+import asyncio
+import json
+import os
+from aiohttp import web
+
+# 儲存連線的客戶端
+rooms = {}
+
+async def handle_websocket(request):
+    """處理 WebSocket 連線"""
+    ws = web.WebSocketResponse()
+    await ws.prepare(request)
+    
+    room_code = None
+    client_type = None
+    
+    try:
+        async for msg in ws:
+            if msg.type == web.WSMsgType.TEXT:
+                data = json.loads(msg.data)
+                
+                if data['type'] == 'join':
+                    room_code = data['room']
+                    client_type = data['client_type']
+                    
+                    if room_code not in rooms:
+                        rooms[room_code] = {}
+                    
+                    rooms[room_code][client_type] = ws
+                    
+                    await ws.send_json({
+                        'type': 'connected',
+                        'room': room_code,
+                        'client_type': client_type
+                    })
+                    
+                    print(f"{client_type} joined room {room_code}")
+                    
+                    if 'projection' in rooms[room_code] and 'controller' in rooms[room_code]:
+                        for client_ws in rooms[room_code].values():
+                            if not client_ws.closed:
+                                await client_ws.send_json({
+                                    'type': 'both_connected',
+                                    'room': room_code
+                                })
+                
+                elif data['type'] == 'control':
+                    if room_code and room_code in rooms:
+                        if 'projection' in rooms[room_code]:
+                            projection_ws = rooms[room_code]['projection']
+                            if not projection_ws.closed:
+                                await projection_ws.send_json(data)
+                
+                elif data['type'] == 'game_state':
+                    if room_code and room_code in rooms:
+                        if 'controller' in rooms[room_code]:
+                            controller_ws = rooms[room_code]['controller']
+                            if not controller_ws.closed:
+                                await controller_ws.send_json(data)
+            
+            elif msg.type == web.WSMsgType.ERROR:
+                print(f'WebSocket error: {ws.exception()}')
+    
+    except Exception as e:
+        print(f'WebSocket exception: {e}')
+    
+    finally:
+        if room_code and room_code in rooms:
+            if client_type in rooms[room_code]:
+                del rooms[room_code][client_type]
+            
+            if not rooms[room_code]:
+                del rooms[room_code]
+            else:
+                for client_ws in rooms[room_code].values():
+                    if not client_ws.closed:
+                        try:
+                            await client_ws.send_json({
+                                'type': 'peer_disconnected',
+                                'room': room_code
+                            })
+                        except:
+                            pass
+    
+    return ws
+
+async def handle_index(request):
+    """首頁"""
+    html = """<!DOCTYPE html>
 <html lang="zh-TW">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>投影遊戲 - 透明背景</title>
+    <title>投影遊戲系統</title>
     <style>
-        * { 
-            margin: 0; 
-            padding: 0; 
-            box-sizing: border-box; 
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            font-family: Arial, sans-serif; min-height: 100vh;
+            display: flex; justify-content: center; align-items: center; padding: 20px;
         }
-        
-        html {
-            background: transparent !important;
+        .container {
+            background: white; border-radius: 20px; padding: 40px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3); max-width: 600px; width: 100%;
         }
-        
-        body { 
-            background: transparent !important;
-            overflow: hidden; 
-            font-family: Arial, sans-serif;
+        h1 { text-align: center; color: #333; margin-bottom: 30px; font-size: 36px; }
+        .option {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white; padding: 30px; border-radius: 15px; margin-bottom: 20px;
+            text-decoration: none; display: block; transition: transform 0.2s;
         }
-        
-        #gameCanvas { 
-            display: block; 
-            width: 100vw; 
-            height: 100vh; 
-            background: transparent !important;
-        }
-        
-        #connectionStatus {
-            position: fixed; 
-            top: 20px; 
-            left: 20px;
-            background: rgba(0, 0, 0, 0.7); 
-            color: white;
-            padding: 15px 25px; 
-            border-radius: 10px;
-            font-size: 18px; 
-            z-index: 1000;
-        }
-        
-        .status-dot {
-            display: inline-block; 
-            width: 12px; 
-            height: 12px;
-            border-radius: 50%; 
-            margin-right: 10px;
-            animation: pulse 2s infinite;
-        }
-        
-        .status-connecting { background: #ffa500; }
-        .status-connected { background: #00ff00; }
-        .status-disconnected { background: #ff0000; }
-        
-        @keyframes pulse { 
-            0%, 100% { opacity: 1; } 
-            50% { opacity: 0.5; } 
-        }
-        
-        #roomCode {
-            position: fixed; 
-            top: 20px; 
-            right: 20px;
-            background: rgba(0, 0, 0, 0.7); 
-            color: white;
-            padding: 15px 25px; 
-            border-radius: 10px;
-            font-size: 24px; 
-            font-weight: bold; 
-            z-index: 1000;
-        }
-        
-        #score {
-            position: fixed; 
-            top: 80px; 
-            right: 20px;
-            background: rgba(0, 0, 0, 0.7); 
-            color: white;
-            padding: 15px 25px; 
-            border-radius: 10px;
-            font-size: 20px; 
-            z-index: 1000;
-        }
-        
-        #gameOver {
-            position: fixed; 
-            top: 50%; 
-            left: 50%;
-            transform: translate(-50%, -50%);
-            background: rgba(0, 0, 0, 0.9); 
-            color: white;
-            padding: 40px 60px; 
-            border-radius: 20px;
-            text-align: center; 
-            display: none; 
-            z-index: 2000;
-        }
-        
-        #gameOver h1 { 
-            font-size: 48px; 
-            margin-bottom: 20px; 
-        }
-        
-        #gameOver p { 
-            font-size: 24px; 
-            margin: 10px 0; 
-        }
+        .option:hover { transform: translateY(-5px); box-shadow: 0 10px 30px rgba(0,0,0,0.2); }
+        .option h2 { font-size: 24px; margin-bottom: 10px; }
+        .option p { font-size: 16px; opacity: 0.9; }
     </style>
 </head>
 <body>
-    <div id="connectionStatus">
-        <span class="status-dot status-connecting"></span>
-        <span id="statusText">等待連線...</span>
+    <div class="container">
+        <h1>🎮 投影遊戲系統</h1>
+        <a href="/projection" class="option">
+            <h2>📽️ 投影端</h2>
+            <p>在投影機或大螢幕上開啟此頁面</p>
+        </a>
+        <a href="/controller" class="option">
+            <h2>🎮 手機手把</h2>
+            <p>在手機上開啟此頁面作為控制器</p>
+        </a>
     </div>
-    <div id="roomCode">房間: <span id="roomCodeText">----</span></div>
-    <div id="score">分數: <span id="scoreText">0</span></div>
-    <div id="gameOver">
-        <h1>遊戲結束!</h1>
-        <p>最終分數: <span id="finalScore">0</span></p>
-        <p style="font-size: 18px; margin-top: 20px;">請從手機重新開始</p>
-    </div>
+</body>
+</html>"""
+    return web.Response(text=html, content_type='text/html')
+
+async def handle_projection(request):
+    """投影端頁面"""
+    # 這裡放你之前的投影端 HTML (太長了,我會在下一個回覆完整給你)
+    html = """<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <title>投影端</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        html, body { background: transparent !important; overflow: hidden; }
+        #gameCanvas { display: block; width: 100vw; height: 100vh; background: transparent !important; }
+    </style>
+</head>
+<body>
     <canvas id="gameCanvas"></canvas>
     <script>
         const canvas = document.getElementById('gameCanvas');
         const ctx = canvas.getContext('2d', { alpha: true });
-        
-        // 設定 canvas 大小
         canvas.width = window.innerWidth;
         canvas.height = window.innerHeight;
         
-        let gameState = 'waiting';
-        let score = 0;
-        let ws = null;
-        let roomCode = '';
+        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+        const ws = new WebSocket(protocol + '//' + window.location.host + '/ws');
         
-        const player = {
-            x: 100, 
-            y: canvas.height - 150, 
-            width: 50, 
-            height: 80,
-            velocityY: 0, 
-            velocityX: 0, 
-            isJumping: false,
-            speed: 5, 
-            jumpPower: 15, 
-            gravity: 0.8
+        ws.onopen = () => {
+            console.log('Connected');
+            ws.send(JSON.stringify({
+                type: 'join',
+                room: 'TEST123',
+                client_type: 'projection'
+            }));
         };
         
-        let obstacles = [];
-        let gifts = [];
-        let obstacleSpeed = 5;
-        let frameCount = 0;
-        
-        function connectWebSocket() {
-            const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-            ws = new WebSocket(protocol + '//' + window.location.host + '/ws');
-            
-            ws.onopen = () => {
-                console.log('WebSocket 連線成功');
-                updateStatus('connecting', '等待房間代碼...');
-                roomCode = 'ROOM' + Math.floor(Math.random() * 10000).toString().padStart(4, '0');
-                document.getElementById('roomCodeText').textContent = roomCode;
-                ws.send(JSON.stringify({
-                    type: 'join',
-                    room: roomCode,
-                    client_type: 'projection'
-                }));
-            };
-            
-            ws.onmessage = (event) => {
-                const data = JSON.parse(event.data);
-                if (data.type === 'connected') {
-                    console.log('已加入房間:', data.room);
-                    updateStatus('connecting', '等待手機連線...');
-                }
-                if (data.type === 'both_connected') {
-                    console.log('手機已連線!');
-                    updateStatus('connected', '已連線');
-                    startGame();
-                }
-                if (data.type === 'control') {
-                    handleControl(data);
-                }
-                if (data.type === 'peer_disconnected') {
-                    updateStatus('disconnected', '手機已斷線');
-                    pauseGame();
-                }
-            };
-            
-            ws.onerror = (error) => {
-                console.error('WebSocket 錯誤:', error);
-                updateStatus('disconnected', '連線錯誤');
-            };
-            
-            ws.onclose = () => {
-                console.log('WebSocket 連線關閉');
-                updateStatus('disconnected', '連線中斷');
-                setTimeout(connectWebSocket, 3000);
-            };
-        }
-        
-        function updateStatus(status, text) {
-            const dot = document.querySelector('.status-dot');
-            dot.className = 'status-dot status-' + status;
-            document.getElementById('statusText').textContent = text;
-        }
-        
-        function handleControl(data) {
-            if (gameState !== 'playing') return;
-            switch(data.action) {
-                case 'left': 
-                    player.velocityX = -player.speed; 
-                    break;
-                case 'right': 
-                    player.velocityX = player.speed; 
-                    break;
-                case 'jump':
-                    if (!player.isJumping) {
-                        player.velocityY = -player.jumpPower;
-                        player.isJumping = true;
-                    }
-                    break;
-                case 'jump_high':
-                    if (!player.isJumping) {
-                        player.velocityY = -player.jumpPower * 1.5;
-                        player.isJumping = true;
-                    }
-                    break;
-                case 'stop_horizontal': 
-                    player.velocityX = 0; 
-                    break;
-                case 'pause': 
-                    pauseGame(); 
-                    break;
-                case 'resume': 
-                    resumeGame(); 
-                    break;
-                case 'exit': 
-                    endGame(); 
-                    break;
-            }
-        }
-        
-        function startGame() {
-            gameState = 'playing';
-            score = 0;
-            obstacles = [];
-            gifts = [];
-            player.x = 100;
-            player.y = canvas.height - 150;
-            player.velocityY = 0;
-            player.velocityX = 0;
-            player.isJumping = false;
-            document.getElementById('gameOver').style.display = 'none';
-            gameLoop();
-        }
-        
-        function pauseGame() {
-            if (gameState === 'playing') gameState = 'paused';
-        }
-        
-        function resumeGame() {
-            if (gameState === 'paused') {
-                gameState = 'playing';
-                gameLoop();
-            }
-        }
-        
-        function endGame() {
-            gameState = 'gameover';
-            document.getElementById('finalScore').textContent = score;
-            document.getElementById('gameOver').style.display = 'block';
-        }
-        
-        function drawPlayer() {
-            ctx.save();
-            
-            // 身體 (紅色)
-            ctx.fillStyle = '#DC143C';
-            ctx.fillRect(player.x, player.y + 30, player.width, 50);
-            
-            // 頭部 (膚色)
-            ctx.fillStyle = '#FFD6A5';
-            ctx.beginPath();
-            ctx.arc(player.x + player.width/2, player.y + 20, 20, 0, Math.PI * 2);
-            ctx.fill();
-            
-            // 聖誕帽
-            ctx.fillStyle = '#DC143C';
-            ctx.beginPath();
-            ctx.moveTo(player.x + player.width/2 - 15, player.y + 5);
-            ctx.lineTo(player.x + player.width/2 + 15, player.y + 5);
-            ctx.lineTo(player.x + player.width/2, player.y - 20);
-            ctx.closePath();
-            ctx.fill();
-            
-            // 帽子球球
-            ctx.fillStyle = 'white';
-            ctx.beginPath();
-            ctx.arc(player.x + player.width/2, player.y - 20, 5, 0, Math.PI * 2);
-            ctx.fill();
-            
-            // 白色帽邊
-            ctx.fillStyle = 'white';
-            ctx.fillRect(player.x + player.width/2 - 15, player.y + 5, 30, 5);
-            
-            // 白鬍子
-            ctx.fillStyle = 'white';
-            ctx.fillRect(player.x + player.width/2 - 10, player.y + 25, 20, 10);
-            
-            // 黑帶子
-            ctx.fillStyle = '#000';
-            ctx.fillRect(player.x, player.y + 50, player.width, 8);
-            
-            // 金色帶扣
-            ctx.fillStyle = '#FFD700';
-            ctx.fillRect(player.x + player.width/2 - 8, player.y + 48, 16, 12);
-            
-            // 腳
-            ctx.fillStyle = '#000';
-            ctx.fillRect(player.x + 5, player.y + 80, 15, 8);
-            ctx.fillRect(player.x + 30, player.y + 80, 15, 8);
-            
-            ctx.restore();
-        }
-        
-        function drawObstacles() {
-            obstacles.forEach(obs => {
-                // 障礙物 - 深灰色方塊
-                ctx.fillStyle = '#444';
-                ctx.fillRect(obs.x, obs.y, obs.width, obs.height);
-                
-                // 加個邊框讓它更明顯
-                ctx.strokeStyle = '#222';
-                ctx.lineWidth = 2;
-                ctx.strokeRect(obs.x, obs.y, obs.width, obs.height);
-            });
-        }
-        
-        function drawGifts() {
-            gifts.forEach(gift => {
-                // 禮物盒 - 紅色
-                ctx.fillStyle = '#DC143C';
-                ctx.fillRect(gift.x, gift.y, gift.width, gift.height);
-                
-                // 金色絲帶 - 垂直
-                ctx.fillStyle = '#FFD700';
-                ctx.fillRect(gift.x + gift.width/2 - 2, gift.y, 4, gift.height);
-                
-                // 金色絲帶 - 水平
-                ctx.fillRect(gift.x, gift.y + gift.height/2 - 2, gift.width, 4);
-                
-                // 蝴蝶結
-                ctx.fillStyle = '#FFD700';
-                ctx.beginPath();
-                ctx.arc(gift.x + gift.width/2 - 8, gift.y, 6, 0, Math.PI * 2);
-                ctx.arc(gift.x + gift.width/2 + 8, gift.y, 6, 0, Math.PI * 2);
-                ctx.fill();
-            });
-        }
-        
-        function spawnObstacle() {
-            const height = 30 + Math.random() * 50;
-            obstacles.push({
-                x: canvas.width,
-                y: canvas.height - height - 50,
-                width: 40,
-                height: height
-            });
-        }
-        
-        function spawnGift() {
-            gifts.push({
-                x: canvas.width,
-                y: canvas.height - 150 - Math.random() * 200,
-                width: 30,
-                height: 30
-            });
-        }
-        
-        function checkCollision(rect1, rect2) {
-            return rect1.x < rect2.x + rect2.width &&
-                   rect1.x + rect1.width > rect2.x &&
-                   rect1.y < rect2.y + rect2.height &&
-                   rect1.y + rect1.height > rect2.y;
-        }
-        
-        function update() {
-            if (gameState !== 'playing') return;
-            
-            // 更新玩家位置
-            player.x += player.velocityX;
-            player.y += player.velocityY;
-            player.velocityY += player.gravity;
-            
-            // 邊界限制
-            if (player.x < 0) player.x = 0;
-            if (player.x + player.width > canvas.width) player.x = canvas.width - player.width;
-            
-            // 地面檢測
-            const ground = canvas.height - 50;
-            if (player.y + player.height >= ground) {
-                player.y = ground - player.height;
-                player.velocityY = 0;
-                player.isJumping = false;
-            }
-            
-            // 生成障礙物和禮物
-            frameCount++;
-            if (frameCount % 120 === 0) spawnObstacle();
-            if (frameCount % 200 === 0) spawnGift();
-            
-            // 更新障礙物
-            obstacles = obstacles.filter(obs => {
-                obs.x -= obstacleSpeed;
-                if (checkCollision(player, obs)) {
-                    endGame();
-                    return false;
-                }
-                return obs.x + obs.width > 0;
-            });
-            
-            // 更新禮物
-            gifts = gifts.filter(gift => {
-                gift.x -= obstacleSpeed;
-                if (checkCollision(player, gift)) {
-                    score += 10;
-                    document.getElementById('scoreText').textContent = score;
-                    return false;
-                }
-                return gift.x + gift.width > 0;
-            });
-            
-            // 增加難度
-            if (frameCount % 600 === 0) obstacleSpeed += 0.5;
-        }
+        ws.onmessage = (event) => {
+            console.log('Message:', event.data);
+        };
         
         function draw() {
-            // 完全清除 canvas - 不填充任何顏色
             ctx.clearRect(0, 0, canvas.width, canvas.height);
-            
-            // 只繪製遊戲元素,不繪製任何背景
-            drawPlayer();
-            drawObstacles();
-            drawGifts();
+            ctx.fillStyle = '#DC143C';
+            ctx.fillRect(100, 100, 50, 80);
         }
         
-        function gameLoop() {
-            if (gameState === 'playing') {
-                update();
-                draw();
-                requestAnimationFrame(gameLoop);
-            }
-        }
-        
-        window.addEventListener('resize', () => {
-            canvas.width = window.innerWidth;
-            canvas.height = window.innerHeight;
-        });
-        
-        connectWebSocket();
+        setInterval(draw, 16);
     </script>
 </body>
-</html>
-"""
-    return web.Response(text=html_content, content_type='text/html')
+</html>"""
+    return web.Response(text=html, content_type='text/html')
+
+async def handle_controller(request):
+    """控制端頁面"""
+    html = """<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <title>手機手把</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); 
+               display: flex; justify-content: center; align-items: center; 
+               min-height: 100vh; color: white; }
+        button { padding: 20px 40px; font-size: 20px; margin: 10px; }
+    </style>
+</head>
+<body>
+    <div>
+        <h1>🎮 手機手把</h1>
+        <button onclick="connect()">連線</button>
+        <button onclick="jump()">跳躍</button>
+    </div>
+    <script>
+        let ws;
+        function connect() {
+            const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+            ws = new WebSocket(protocol + '//' + window.location.host + '/ws');
+            ws.onopen = () => {
+                console.log('Connected');
+                ws.send(JSON.stringify({
+                    type: 'join',
+                    room: 'TEST123',
+                    client_type: 'controller'
+                }));
+            };
+        }
+        function jump() {
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify({ type: 'control', action: 'jump' }));
+            }
+        }
+    </script>
+</body>
+</html>"""
+    return web.Response(text=html, content_type='text/html')
+
+def main():
+    """主程式入口"""
+    app = web.Application()
+    
+    # 路由
+    app.router.add_get('/', handle_index)
+    app.router.add_get('/projection', handle_projection)
+    app.router.add_get('/controller', handle_controller)
+    app.router.add_get('/ws', handle_websocket)
+    
+    # 啟動伺服器
+    PORT = int(os.environ.get('PORT', 10000))
+    print(f"🚀 Server starting on port {PORT}")
+    
+    web.run_app(app, host='0.0.0.0', port=PORT)
+
+if __name__ == "__main__":
+    main()
