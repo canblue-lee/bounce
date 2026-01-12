@@ -1,0 +1,588 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>投影遊戲控制器 + 即時掃描</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        body {
+            width: 100vw;
+            height: 100vh;
+            overflow: hidden;
+            background: #1a1a1a;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            position: relative;
+        }
+
+        /* 相機背景層 */
+        #cameraView {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            z-index: 1;
+        }
+
+        /* 掃描框提示 */
+        .scan-frame {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 80%;
+            max-width: 400px;
+            aspect-ratio: 1;
+            border: 3px dashed rgba(0, 255, 136, 0.5);
+            border-radius: 20px;
+            z-index: 2;
+            pointer-events: none;
+            animation: scanPulse 2s ease-in-out infinite;
+        }
+
+        @keyframes scanPulse {
+            0%, 100% { opacity: 0.5; transform: translate(-50%, -50%) scale(1); }
+            50% { opacity: 1; transform: translate(-50%, -50%) scale(1.02); }
+        }
+
+        .scan-hint {
+            position: absolute;
+            top: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(0, 0, 0, 0.8);
+            color: #00ff88;
+            padding: 12px 24px;
+            border-radius: 25px;
+            font-size: 14px;
+            font-weight: 600;
+            z-index: 3;
+            backdrop-filter: blur(10px);
+        }
+
+        /* 控制器容器 */
+        .controller-container {
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            height: 45%;
+            background: linear-gradient(to bottom, transparent, rgba(0, 0, 0, 0.95));
+            z-index: 10;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: flex-end;
+            padding-bottom: 30px;
+        }
+
+        /* 復古手把主體 */
+        .gamepad {
+            width: 90%;
+            max-width: 500px;
+            aspect-ratio: 2.2/1;
+            background: linear-gradient(145deg, #d4d4d8, #a1a1aa);
+            border-radius: 50px 50px 30px 30px;
+            position: relative;
+            box-shadow: 
+                0 10px 40px rgba(0, 0, 0, 0.5),
+                inset 0 2px 5px rgba(255, 255, 255, 0.3),
+                inset 0 -2px 5px rgba(0, 0, 0, 0.2);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0 40px;
+        }
+
+        /* 手把握把 */
+        .gamepad::before,
+        .gamepad::after {
+            content: '';
+            position: absolute;
+            bottom: -15px;
+            width: 60px;
+            height: 80px;
+            background: linear-gradient(145deg, #a1a1aa, #71717a);
+            border-radius: 0 0 25px 25px;
+            box-shadow: inset 0 -2px 10px rgba(0, 0, 0, 0.3);
+        }
+
+        .gamepad::before { left: 30px; }
+        .gamepad::after { right: 30px; }
+
+        /* 中央區域 */
+        .center-section {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            display: flex;
+            gap: 20px;
+            align-items: center;
+        }
+
+        .center-btn {
+            width: 35px;
+            height: 35px;
+            border-radius: 50%;
+            background: linear-gradient(145deg, #e4e4e7, #a1a1aa);
+            box-shadow: 
+                0 3px 8px rgba(0, 0, 0, 0.3),
+                inset 0 1px 2px rgba(255, 255, 255, 0.5);
+            border: none;
+            font-size: 11px;
+            font-weight: bold;
+            color: #27272a;
+            cursor: pointer;
+            transition: all 0.1s;
+        }
+
+        .center-btn:active {
+            transform: scale(0.95);
+            box-shadow: 
+                0 1px 3px rgba(0, 0, 0, 0.3),
+                inset 0 2px 5px rgba(0, 0, 0, 0.2);
+        }
+
+        /* 左側 D-Pad */
+        .dpad-container {
+            position: relative;
+            width: 120px;
+            height: 120px;
+        }
+
+        .dpad {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 110px;
+            height: 110px;
+            background: #27272a;
+            border-radius: 15px;
+            display: grid;
+            grid-template-areas:
+                ". up ."
+                "left center right"
+                ". down .";
+            gap: 3px;
+            padding: 5px;
+            box-shadow: 
+                0 5px 15px rgba(0, 0, 0, 0.4),
+                inset 0 2px 5px rgba(0, 0, 0, 0.3);
+        }
+
+        .dpad-btn {
+            background: linear-gradient(145deg, #3f3f46, #27272a);
+            border: none;
+            cursor: pointer;
+            transition: all 0.1s;
+            position: relative;
+            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.3);
+        }
+
+        .dpad-btn:active {
+            transform: scale(0.95);
+            box-shadow: inset 0 2px 8px rgba(0, 0, 0, 0.5);
+        }
+
+        .dpad-up { grid-area: up; border-radius: 8px 8px 3px 3px; }
+        .dpad-down { grid-area: down; border-radius: 3px 3px 8px 8px; }
+        .dpad-left { grid-area: left; border-radius: 8px 3px 3px 8px; }
+        .dpad-right { grid-area: right; border-radius: 3px 8px 8px 3px; }
+        .dpad-center { 
+            grid-area: center; 
+            background: #18181b;
+            cursor: default;
+            border-radius: 3px;
+        }
+
+        /* 右側按鈕群組 */
+        .action-buttons {
+            position: relative;
+            width: 130px;
+            height: 130px;
+        }
+
+        .action-btn {
+            position: absolute;
+            width: 45px;
+            height: 45px;
+            border-radius: 50%;
+            border: 3px solid #27272a;
+            cursor: pointer;
+            transition: all 0.1s;
+            box-shadow: 
+                0 4px 10px rgba(0, 0, 0, 0.3),
+                inset 0 2px 3px rgba(255, 255, 255, 0.2);
+            font-weight: bold;
+            font-size: 16px;
+            color: white;
+        }
+
+        .action-btn:active {
+            transform: scale(0.92);
+            box-shadow: 
+                0 2px 5px rgba(0, 0, 0, 0.3),
+                inset 0 3px 8px rgba(0, 0, 0, 0.3);
+        }
+
+        .btn-x {
+            background: linear-gradient(145deg, #6b7cff, #4d5fd8);
+            top: 0;
+            left: 50%;
+            transform: translateX(-50%);
+        }
+
+        .btn-y {
+            background: linear-gradient(145deg, #4ade80, #22c55e);
+            top: 50%;
+            left: 0;
+            transform: translateY(-50%);
+        }
+
+        .btn-a {
+            background: linear-gradient(145deg, #f87171, #dc2626);
+            top: 50%;
+            right: 0;
+            transform: translateY(-50%);
+        }
+
+        .btn-b {
+            background: linear-gradient(145deg, #fbbf24, #f59e0b);
+            bottom: 0;
+            left: 50%;
+            transform: translateX(-50%);
+        }
+
+        /* 狀態指示器 */
+        .status-indicator {
+            position: absolute;
+            top: 15px;
+            right: 15px;
+            display: flex;
+            gap: 8px;
+            z-index: 3;
+        }
+
+        .status-dot {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            background: #ef4444;
+            box-shadow: 0 0 10px currentColor;
+            animation: blink 1.5s infinite;
+        }
+
+        .status-dot.connected {
+            background: #22c55e;
+            animation: none;
+        }
+
+        .status-dot.camera {
+            background: #3b82f6;
+        }
+
+        @keyframes blink {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.3; }
+        }
+
+        /* 連線訊息 */
+        .connection-message {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(0, 0, 0, 0.9);
+            color: white;
+            padding: 30px 40px;
+            border-radius: 20px;
+            text-align: center;
+            z-index: 100;
+            backdrop-filter: blur(10px);
+        }
+
+        .connection-message h2 {
+            font-size: 24px;
+            margin-bottom: 15px;
+            color: #00ff88;
+        }
+
+        .connection-message p {
+            font-size: 14px;
+            opacity: 0.8;
+            line-height: 1.6;
+        }
+
+        .loading-spinner {
+            margin: 20px auto 0;
+            width: 40px;
+            height: 40px;
+            border: 4px solid rgba(255, 255, 255, 0.1);
+            border-top-color: #00ff88;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body>
+    <!-- 相機畫面 -->
+    <video id="cameraView" autoplay playsinline></video>
+    
+    <!-- 掃描框 -->
+    <div class="scan-frame"></div>
+    <div class="scan-hint">📸 正在掃描投影區域...</div>
+
+    <!-- 狀態指示 -->
+    <div class="status-indicator">
+        <div class="status-dot camera" id="cameraStatus" title="相機狀態"></div>
+        <div class="status-dot" id="wsStatus" title="連線狀態"></div>
+    </div>
+
+    <!-- 連線訊息 -->
+    <div class="connection-message" id="connectionMessage">
+        <h2>🎮 正在連線...</h2>
+        <p>請確保投影裝置已開啟<br>並連接到相同的伺服器</p>
+        <div class="loading-spinner"></div>
+    </div>
+
+    <!-- 控制器 -->
+    <div class="controller-container">
+        <div class="gamepad">
+            <!-- 左側 D-Pad -->
+            <div class="dpad-container">
+                <div class="dpad">
+                    <button class="dpad-btn dpad-up" data-key="up"></button>
+                    <button class="dpad-btn dpad-left" data-key="left"></button>
+                    <div class="dpad-center"></div>
+                    <button class="dpad-btn dpad-right" data-key="right"></button>
+                    <button class="dpad-btn dpad-down" data-key="down"></button>
+                </div>
+            </div>
+
+            <!-- 中央按鈕 -->
+            <div class="center-section">
+                <button class="center-btn" data-key="select">−</button>
+                <button class="center-btn" data-key="start">▶</button>
+            </div>
+
+            <!-- 右側動作按鈕 -->
+            <div class="action-buttons">
+                <button class="action-btn btn-x" data-key="x">X</button>
+                <button class="action-btn btn-y" data-key="y">Y</button>
+                <button class="action-btn btn-a" data-key="a">A</button>
+                <button class="action-btn btn-b" data-key="b">B</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // ===== 全域變數 =====
+        let ws = null;
+        let cameraStream = null;
+        let isConnected = false;
+
+        // WebSocket 設定
+        const WS_URL = 'wss://bounce-7ok4.onrender.com';
+
+        // ===== 初始化 =====
+        async function init() {
+            console.log('🎮 投影遊戲控制器啟動');
+            
+            // 1. 啟動相機
+            await startCamera();
+            
+            // 2. 連接 WebSocket
+            connectWebSocket();
+            
+            // 3. 設定控制器按鈕
+            setupController();
+        }
+
+        // ===== 相機功能 =====
+        async function startCamera() {
+            try {
+                console.log('📸 啟動相機...');
+                
+                const constraints = {
+                    video: {
+                        facingMode: 'environment', // 後置相機
+                        width: { ideal: 1920 },
+                        height: { ideal: 1080 }
+                    }
+                };
+
+                cameraStream = await navigator.mediaDevices.getUserMedia(constraints);
+                const video = document.getElementById('cameraView');
+                video.srcObject = cameraStream;
+                
+                // 更新狀態
+                document.getElementById('cameraStatus').classList.add('connected');
+                
+                console.log('✅ 相機啟動成功');
+
+                // 開始傳送畫面
+                startStreamingFrames();
+                
+            } catch (error) {
+                console.error('❌ 相機啟動失敗:', error);
+                alert('無法啟動相機,請檢查權限設定');
+            }
+        }
+
+        // 傳送相機畫面
+        function startStreamingFrames() {
+            const video = document.getElementById('cameraView');
+            const canvas = document.createElement('canvas');
+            const ctx = canvas.getContext('2d');
+
+            setInterval(() => {
+                if (!isConnected || !video.videoWidth) return;
+
+                // 設定 canvas 尺寸
+                canvas.width = 640;  // 降低解析度以提升傳輸速度
+                canvas.height = 480;
+
+                // 繪製當前畫面
+                ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+                // 轉換為 base64
+                const imageData = canvas.toDataURL('image/jpeg', 0.7);
+
+                // 傳送給投影端
+                sendMessage({
+                    type: 'cameraFrame',
+                    data: imageData,
+                    timestamp: Date.now()
+                });
+            }, 100); // 每 100ms 傳送一次 (10 FPS)
+        }
+
+        // ===== WebSocket 連線 =====
+        function connectWebSocket() {
+            console.log('🔌 連接 WebSocket...');
+            
+            ws = new WebSocket(WS_URL);
+
+            ws.onopen = () => {
+                console.log('✅ WebSocket 連線成功');
+                isConnected = true;
+                document.getElementById('wsStatus').classList.add('connected');
+                document.getElementById('connectionMessage').style.display = 'none';
+                
+                // 註冊為控制器
+                sendMessage({
+                    type: 'register',
+                    role: 'controller',
+                    timestamp: Date.now()
+                });
+            };
+
+            ws.onclose = () => {
+                console.log('🔌 WebSocket 連線關閉');
+                isConnected = false;
+                document.getElementById('wsStatus').classList.remove('connected');
+                
+                // 3秒後重連
+                setTimeout(connectWebSocket, 3000);
+            };
+
+            ws.onerror = (error) => {
+                console.error('❌ WebSocket 錯誤:', error);
+            };
+
+            ws.onmessage = (event) => {
+                try {
+                    const message = JSON.parse(event.data);
+                    handleMessage(message);
+                } catch (error) {
+                    console.error('❌ 訊息解析失敗:', error);
+                }
+            };
+        }
+
+        // 傳送訊息
+        function sendMessage(message) {
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify(message));
+            }
+        }
+
+        // 處理收到的訊息
+        function handleMessage(message) {
+            console.log('📨 收到訊息:', message.type);
+            
+            // 可以在這裡處理投影端回傳的訊息
+            if (message.type === 'calibrationComplete') {
+                console.log('✅ 校正完成');
+            }
+        }
+
+        // ===== 控制器設定 =====
+        function setupController() {
+            const buttons = document.querySelectorAll('.dpad-btn, .action-btn, .center-btn');
+            
+            buttons.forEach(btn => {
+                const key = btn.dataset.key;
+                
+                // 觸控開始
+                btn.addEventListener('touchstart', (e) => {
+                    e.preventDefault();
+                    handleButtonPress(key, true);
+                });
+                
+                // 觸控結束
+                btn.addEventListener('touchend', (e) => {
+                    e.preventDefault();
+                    handleButtonPress(key, false);
+                });
+
+                // 支援滑鼠(測試用)
+                btn.addEventListener('mousedown', () => handleButtonPress(key, true));
+                btn.addEventListener('mouseup', () => handleButtonPress(key, false));
+            });
+
+            console.log('🎮 控制器設定完成');
+        }
+
+        // 處理按鈕按下
+        function handleButtonPress(key, isPressed) {
+            console.log(`🎮 ${key}: ${isPressed ? 'PRESS' : 'RELEASE'}`);
+            
+            // 震動回饋
+            if (isPressed && navigator.vibrate) {
+                navigator.vibrate(30);
+            }
+
+            // 傳送按鈕事件
+            sendMessage({
+                type: 'buttonInput',
+                key: key,
+                pressed: isPressed,
+                timestamp: Date.now()
+            });
+        }
+
+        // ===== 啟動 =====
+        window.addEventListener('load', init);
+
+        // 防止頁面滾動
+        document.addEventListener('touchmove', (e) => {
+            e.preventDefault();
+        }, { passive: false });
+    </script>
+</body>
+</html>

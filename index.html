@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>投影遊戲系統 - 相機版</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            min-height: 100vh;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 600px;
+            width: 100%;
+        }
+
+        .card {
+            background: white;
+            border-radius: 20px;
+            padding: 40px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            text-align: center;
+        }
+
+        h1 {
+            font-size: 36px;
+            margin-bottom: 15px;
+            color: #2d3748;
+        }
+
+        .subtitle {
+            font-size: 18px;
+            color: #718096;
+            margin-bottom: 40px;
+        }
+
+        .version {
+            display: inline-block;
+            background: linear-gradient(135deg, #667eea, #764ba2);
+            color: white;
+            padding: 6px 16px;
+            border-radius: 20px;
+            font-size: 14px;
+            font-weight: bold;
+            margin-bottom: 30px;
+        }
+
+        .button-group {
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+            margin-bottom: 30px;
+        }
+
+        .btn {
+            display: block;
+            padding: 20px 30px;
+            border-radius: 15px;
+            text-decoration: none;
+            font-weight: bold;
+            font-size: 18px;
+            transition: all 0.3s;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, #667eea, #764ba2);
+            color: white;
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(102, 126, 234, 0.4);
+        }
+
+        .btn-secondary {
+            background: linear-gradient(135deg, #f093fb, #f5576c);
+            color: white;
+        }
+
+        .btn-secondary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(245, 87, 108, 0.4);
+        }
+
+        .info {
+            background: #f7fafc;
+            border-radius: 15px;
+            padding: 20px;
+            margin-top: 20px;
+        }
+
+        .info h3 {
+            font-size: 16px;
+            color: #2d3748;
+            margin-bottom: 10px;
+        }
+
+        .info ul {
+            list-style: none;
+            text-align: left;
+            color: #4a5568;
+            font-size: 14px;
+            line-height: 2;
+        }
+
+        .info li::before {
+            content: "✓ ";
+            color: #48bb78;
+            font-weight: bold;
+            margin-right: 8px;
+        }
+
+        .emoji {
+            font-size: 48px;
+            margin-bottom: 20px;
+        }
+
+        @media (max-width: 600px) {
+            .card {
+                padding: 30px 20px;
+            }
+
+            h1 {
+                font-size: 28px;
+            }
+
+            .btn {
+                padding: 16px 24px;
+                font-size: 16px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="card">
+            <div class="emoji">🎮</div>
+            <h1>投影遊戲系統</h1>
+            <p class="subtitle">相機即時掃描版</p>
+            <div class="version">v2.0 Camera Live</div>
+
+            <div class="button-group">
+                <a href="/game-projector-display.html" class="btn btn-primary">
+                    🖥️ 投影端顯示
+                </a>
+                <a href="/game-camera-controller.html" class="btn btn-secondary">
+                    📱 手機控制器
+                </a>
+            </div>
+
+            <div class="info">
+                <h3>✨ 新功能特色</h3>
+                <ul>
+                    <li>啟動即開啟相機掃描</li>
+                    <li>復古遊戲手把設計</li>
+                    <li>即時畫面傳輸 (10 FPS)</li>
+                    <li>完整按鈕控制</li>
+                    <li>低延遲 WebSocket</li>
+                </ul>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // 自動偵測裝置類型並推薦頁面
+        const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+        
+        if (isMobile) {
+            // 手機裝置 - 高亮控制器按鈕
+            document.querySelectorAll('.btn-secondary')[0].style.border = '3px solid #fbbf24';
+        } else {
+            // 電腦裝置 - 高亮投影端按鈕
+            document.querySelectorAll('.btn-primary')[0].style.border = '3px solid #fbbf24';
+        }
+    </script>
+</body>
+</html>

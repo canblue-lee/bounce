@@ -1,0 +1,441 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>投影端 - 遊戲顯示</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            width: 100vw;
+            height: 100vh;
+            overflow: hidden;
+            background: #000;
+            font-family: Arial, sans-serif;
+        }
+
+        /* 相機畫面背景 */
+        #cameraBackground {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            opacity: 0.3;
+            filter: blur(5px);
+        }
+
+        /* 遊戲畫布 */
+        #gameCanvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 10;
+        }
+
+        /* 狀態列 */
+        .status-bar {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            background: rgba(0, 0, 0, 0.8);
+            color: white;
+            padding: 15px 25px;
+            border-radius: 15px;
+            font-size: 14px;
+            z-index: 100;
+            backdrop-filter: blur(10px);
+        }
+
+        .status-item {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 8px;
+        }
+
+        .status-item:last-child {
+            margin-bottom: 0;
+        }
+
+        .status-dot {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            background: #ef4444;
+            animation: blink 1.5s infinite;
+        }
+
+        .status-dot.active {
+            background: #22c55e;
+            animation: none;
+        }
+
+        @keyframes blink {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.3; }
+        }
+
+        /* 等待連線畫面 */
+        .waiting-screen {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: linear-gradient(135deg, #1e293b, #0f172a);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+        }
+
+        .waiting-screen.hidden {
+            display: none;
+        }
+
+        .waiting-content {
+            text-align: center;
+            color: white;
+        }
+
+        .waiting-icon {
+            font-size: 80px;
+            margin-bottom: 30px;
+            animation: float 3s ease-in-out infinite;
+        }
+
+        @keyframes float {
+            0%, 100% { transform: translateY(0); }
+            50% { transform: translateY(-20px); }
+        }
+
+        .waiting-content h1 {
+            font-size: 36px;
+            margin-bottom: 15px;
+        }
+
+        .waiting-content p {
+            font-size: 18px;
+            opacity: 0.7;
+            line-height: 1.6;
+        }
+
+        .loading-dots {
+            display: inline-block;
+            margin-left: 5px;
+        }
+
+        .loading-dots span {
+            animation: blink 1.4s infinite;
+        }
+
+        .loading-dots span:nth-child(2) {
+            animation-delay: 0.2s;
+        }
+
+        .loading-dots span:nth-child(3) {
+            animation-delay: 0.4s;
+        }
+
+        /* FPS 計數器 */
+        .fps-counter {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            background: rgba(0, 0, 0, 0.8);
+            color: #00ff88;
+            padding: 10px 15px;
+            border-radius: 10px;
+            font-family: monospace;
+            font-size: 14px;
+            z-index: 100;
+        }
+    </style>
+</head>
+<body>
+    <!-- 等待連線畫面 -->
+    <div class="waiting-screen" id="waitingScreen">
+        <div class="waiting-content">
+            <div class="waiting-icon">🎮</div>
+            <h1>等待控制器連線</h1>
+            <p>
+                請在手機開啟控制器頁面<br>
+                並確保連接到相同伺服器
+                <span class="loading-dots">
+                    <span>.</span><span>.</span><span>.</span>
+                </span>
+            </p>
+        </div>
+    </div>
+
+    <!-- 相機畫面 -->
+    <img id="cameraBackground" alt="Camera Feed">
+
+    <!-- 遊戲畫布 -->
+    <canvas id="gameCanvas"></canvas>
+
+    <!-- 狀態列 -->
+    <div class="status-bar">
+        <div class="status-item">
+            <div class="status-dot" id="wsStatus"></div>
+            <span id="wsStatusText">伺服器: 連線中...</span>
+        </div>
+        <div class="status-item">
+            <div class="status-dot" id="controllerStatus"></div>
+            <span id="controllerStatusText">控制器: 未連線</span>
+        </div>
+        <div class="status-item">
+            <div class="status-dot" id="cameraStatus"></div>
+            <span id="cameraStatusText">相機: 等待中...</span>
+        </div>
+    </div>
+
+    <!-- FPS 計數器 -->
+    <div class="fps-counter">
+        FPS: <span id="fpsValue">0</span> | 
+        Ping: <span id="pingValue">0</span>ms
+    </div>
+
+    <script>
+        // ===== 全域變數 =====
+        let ws = null;
+        let canvas, ctx;
+        let isConnected = false;
+        let hasController = false;
+        let lastFrameTime = Date.now();
+        let frameCount = 0;
+        let fps = 0;
+
+        // WebSocket 設定
+        const WS_URL = 'wss://bounce-7ok4.onrender.com';
+
+        // 遊戲狀態
+        const gameState = {
+            player: {
+                x: 400,
+                y: 300,
+                size: 40,
+                color: '#00ff88',
+                speed: 5
+            },
+            keys: {},
+            cameraImage: null
+        };
+
+        // ===== 初始化 =====
+        function init() {
+            console.log('🎮 投影端啟動');
+            
+            // 設定 canvas
+            canvas = document.getElementById('gameCanvas');
+            ctx = canvas.getContext('2d');
+            resizeCanvas();
+            window.addEventListener('resize', resizeCanvas);
+            
+            // 連接 WebSocket
+            connectWebSocket();
+            
+            // 開始遊戲循環
+            gameLoop();
+            
+            // FPS 計數器
+            setInterval(updateFPS, 1000);
+        }
+
+        function resizeCanvas() {
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+        }
+
+        // ===== WebSocket 連線 =====
+        function connectWebSocket() {
+            console.log('🔌 連接 WebSocket...');
+            
+            ws = new WebSocket(WS_URL);
+
+            ws.onopen = () => {
+                console.log('✅ WebSocket 連線成功');
+                isConnected = true;
+                updateStatus('ws', true, '伺服器: 已連線');
+                
+                // 註冊為投影端
+                sendMessage({
+                    type: 'register',
+                    role: 'projector',
+                    timestamp: Date.now()
+                });
+            };
+
+            ws.onclose = () => {
+                console.log('🔌 WebSocket 連線關閉');
+                isConnected = false;
+                hasController = false;
+                updateStatus('ws', false, '伺服器: 連線中...');
+                updateStatus('controller', false, '控制器: 未連線');
+                document.getElementById('waitingScreen').classList.remove('hidden');
+                
+                // 3秒後重連
+                setTimeout(connectWebSocket, 3000);
+            };
+
+            ws.onerror = (error) => {
+                console.error('❌ WebSocket 錯誤:', error);
+            };
+
+            ws.onmessage = (event) => {
+                try {
+                    const message = JSON.parse(event.data);
+                    handleMessage(message);
+                } catch (error) {
+                    console.error('❌ 訊息解析失敗:', error);
+                }
+            };
+        }
+
+        // 傳送訊息
+        function sendMessage(message) {
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify(message));
+            }
+        }
+
+        // 處理收到的訊息
+        function handleMessage(message) {
+            switch (message.type) {
+                case 'register':
+                    if (message.role === 'controller') {
+                        console.log('✅ 控制器已連線');
+                        hasController = true;
+                        updateStatus('controller', true, '控制器: 已連線');
+                        document.getElementById('waitingScreen').classList.add('hidden');
+                    }
+                    break;
+
+                case 'buttonInput':
+                    // 處理按鈕輸入
+                    gameState.keys[message.key] = message.pressed;
+                    console.log(`🎮 ${message.key}: ${message.pressed ? 'ON' : 'OFF'}`);
+                    break;
+
+                case 'cameraFrame':
+                    // 更新相機畫面
+                    if (!gameState.cameraImage) {
+                        updateStatus('camera', true, '相機: 接收中');
+                    }
+                    gameState.cameraImage = message.data;
+                    document.getElementById('cameraBackground').src = message.data;
+                    break;
+            }
+        }
+
+        // 更新狀態顯示
+        function updateStatus(type, active, text) {
+            const dot = document.getElementById(`${type}Status`);
+            const textEl = document.getElementById(`${type}StatusText`);
+            
+            if (active) {
+                dot.classList.add('active');
+            } else {
+                dot.classList.remove('active');
+            }
+            
+            if (textEl) {
+                textEl.textContent = text;
+            }
+        }
+
+        // ===== 遊戲邏輯 =====
+        function gameLoop() {
+            // 清空畫布
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            // 更新玩家位置
+            updatePlayer();
+
+            // 繪製遊戲元素
+            drawGame();
+
+            // FPS 計數
+            frameCount++;
+
+            // 繼續循環
+            requestAnimationFrame(gameLoop);
+        }
+
+        function updatePlayer() {
+            const player = gameState.player;
+            const keys = gameState.keys;
+
+            // 方向鍵控制
+            if (keys.up) player.y -= player.speed;
+            if (keys.down) player.y += player.speed;
+            if (keys.left) player.x -= player.speed;
+            if (keys.right) player.x += player.speed;
+
+            // 邊界限制
+            player.x = Math.max(player.size, Math.min(canvas.width - player.size, player.x));
+            player.y = Math.max(player.size, Math.min(canvas.height - player.size, player.y));
+        }
+
+        function drawGame() {
+            const player = gameState.player;
+
+            // 繪製玩家
+            ctx.fillStyle = player.color;
+            ctx.shadowColor = player.color;
+            ctx.shadowBlur = 20;
+            ctx.beginPath();
+            ctx.arc(player.x, player.y, player.size, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.shadowBlur = 0;
+
+            // 繪製控制提示(如果有按下按鈕)
+            if (gameState.keys.a) {
+                drawActionIndicator(player.x, player.y - 80, 'A', '#f87171');
+            }
+            if (gameState.keys.b) {
+                drawActionIndicator(player.x + 60, player.y, 'B', '#fbbf24');
+            }
+            if (gameState.keys.x) {
+                drawActionIndicator(player.x, player.y + 80, 'X', '#6b7cff');
+            }
+            if (gameState.keys.y) {
+                drawActionIndicator(player.x - 60, player.y, 'Y', '#4ade80');
+            }
+        }
+
+        function drawActionIndicator(x, y, label, color) {
+            ctx.fillStyle = color;
+            ctx.font = 'bold 24px Arial';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText(label, x, y);
+        }
+
+        // FPS 計數器
+        function updateFPS() {
+            fps = frameCount;
+            frameCount = 0;
+            document.getElementById('fpsValue').textContent = fps;
+
+            // 計算 ping (簡化版)
+            const ping = Date.now() - lastFrameTime;
+            document.getElementById('pingValue').textContent = Math.min(999, ping);
+            lastFrameTime = Date.now();
+        }
+
+        // ===== 啟動 =====
+        window.addEventListener('load', init);
+    </script>
+</body>
+</html>
