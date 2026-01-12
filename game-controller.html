@@ -1,0 +1,504 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>遊戲手把 - 任天堂風格</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            -webkit-tap-highlight-color: transparent;
+        }
+        
+        body {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            font-family: 'Arial', sans-serif;
+            overflow: hidden;
+            touch-action: none;
+        }
+        
+        #connectionPanel {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.95);
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            z-index: 10000;
+        }
+        
+        #connectionPanel h1 {
+            color: white;
+            font-size: 32px;
+            margin-bottom: 30px;
+        }
+        
+        #roomCodeInput {
+            width: 300px;
+            padding: 15px;
+            font-size: 24px;
+            text-align: center;
+            border: 3px solid #667eea;
+            border-radius: 10px;
+            background: white;
+            margin-bottom: 20px;
+        }
+        
+        #connectBtn {
+            width: 300px;
+            padding: 15px;
+            font-size: 20px;
+            background: #667eea;
+            color: white;
+            border: none;
+            border-radius: 10px;
+            cursor: pointer;
+            font-weight: bold;
+        }
+        
+        #connectBtn:active {
+            background: #5568d3;
+        }
+        
+        #connectionStatus {
+            color: white;
+            font-size: 16px;
+            margin-top: 20px;
+        }
+        
+        .status-dot {
+            display: inline-block;
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            margin-right: 8px;
+            animation: pulse 2s infinite;
+        }
+        
+        .status-connecting {
+            background: #ffa500;
+        }
+        
+        .status-connected {
+            background: #00ff00;
+        }
+        
+        .status-disconnected {
+            background: #ff0000;
+        }
+        
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+        
+        #controller {
+            display: none;
+            width: 100vw;
+            height: 100vh;
+            padding: 20px;
+        }
+        
+        #topBar {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+        
+        #roomInfo {
+            background: rgba(255, 255, 255, 0.2);
+            padding: 10px 20px;
+            border-radius: 20px;
+            color: white;
+            font-size: 18px;
+            font-weight: bold;
+        }
+        
+        #exitBtn {
+            background: rgba(255, 0, 0, 0.7);
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 20px;
+            font-size: 16px;
+            font-weight: bold;
+        }
+        
+        #controlArea {
+            height: calc(100vh - 100px);
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+        }
+        
+        #leftSide, #rightSide {
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+        }
+        
+        /* 十字方向鍵 */
+        #dpad {
+            position: relative;
+            width: 180px;
+            height: 180px;
+            margin-bottom: 20px;
+        }
+        
+        .dpad-btn {
+            position: absolute;
+            background: rgba(255, 255, 255, 0.9);
+            border: 3px solid #333;
+            width: 60px;
+            height: 60px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-size: 28px;
+            cursor: pointer;
+            user-select: none;
+        }
+        
+        .dpad-btn:active {
+            background: #667eea;
+            color: white;
+        }
+        
+        #dpad-up {
+            top: 0;
+            left: 60px;
+            border-radius: 15px 15px 0 0;
+        }
+        
+        #dpad-down {
+            bottom: 0;
+            left: 60px;
+            border-radius: 0 0 15px 15px;
+        }
+        
+        #dpad-left {
+            left: 0;
+            top: 60px;
+            border-radius: 15px 0 0 15px;
+        }
+        
+        #dpad-right {
+            right: 0;
+            top: 60px;
+            border-radius: 0 15px 15px 0;
+        }
+        
+        #dpad-center {
+            left: 60px;
+            top: 60px;
+            background: #333;
+            border-radius: 50%;
+            pointer-events: none;
+        }
+        
+        /* A/B 按鈕 */
+        #actionBtns {
+            display: flex;
+            gap: 30px;
+            margin-bottom: 20px;
+        }
+        
+        .action-btn {
+            width: 80px;
+            height: 80px;
+            border-radius: 50%;
+            border: 4px solid #333;
+            background: rgba(255, 255, 255, 0.9);
+            font-size: 32px;
+            font-weight: bold;
+            color: #333;
+            cursor: pointer;
+            user-select: none;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+        
+        .action-btn:active {
+            background: #DC143C;
+            color: white;
+        }
+        
+        #btnA {
+            background: rgba(255, 100, 100, 0.9);
+        }
+        
+        #btnB {
+            background: rgba(255, 200, 100, 0.9);
+        }
+        
+        /* 暫停按鈕 */
+        #pauseBtn {
+            width: 120px;
+            padding: 15px;
+            background: rgba(255, 255, 255, 0.9);
+            border: 3px solid #333;
+            border-radius: 25px;
+            font-size: 18px;
+            font-weight: bold;
+            cursor: pointer;
+            user-select: none;
+        }
+        
+        #pauseBtn:active {
+            background: #FFD700;
+        }
+        
+        .label {
+            color: white;
+            font-size: 14px;
+            margin-top: 10px;
+            text-align: center;
+        }
+    </style>
+</head>
+<body>
+    <!-- 連線面板 -->
+    <div id="connectionPanel">
+        <h1>🎮 遊戲手把</h1>
+        <input 
+            type="text" 
+            id="roomCodeInput" 
+            placeholder="輸入房間代碼"
+            maxlength="8"
+        >
+        <button id="connectBtn">連線</button>
+        <div id="connectionStatus">
+            <span class="status-dot status-disconnected"></span>
+            <span id="statusText">未連線</span>
+        </div>
+    </div>
+
+    <!-- 控制器介面 -->
+    <div id="controller">
+        <div id="topBar">
+            <div id="roomInfo">房間: <span id="currentRoom">----</span></div>
+            <button id="exitBtn">退出</button>
+        </div>
+        
+        <div id="controlArea">
+            <!-- 左側: 方向鍵 -->
+            <div id="leftSide">
+                <div id="dpad">
+                    <div class="dpad-btn" id="dpad-up">▲</div>
+                    <div class="dpad-btn" id="dpad-down">▼</div>
+                    <div class="dpad-btn" id="dpad-left">◀</div>
+                    <div class="dpad-btn" id="dpad-right">▶</div>
+                    <div class="dpad-btn" id="dpad-center"></div>
+                </div>
+                <div class="label">方向鍵</div>
+            </div>
+            
+            <!-- 右側: 動作按鈕 -->
+            <div id="rightSide">
+                <div id="actionBtns">
+                    <div class="action-btn" id="btnB">B</div>
+                    <div class="action-btn" id="btnA">A</div>
+                </div>
+                <div class="label">A: 跳躍 | B: 高跳</div>
+                
+                <div style="margin-top: 40px;">
+                    <button id="pauseBtn">⏸ 暫停</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let ws = null;
+        let roomCode = '';
+        let isConnected = false;
+        let isPaused = false;
+        
+        // DOM 元素
+        const connectionPanel = document.getElementById('connectionPanel');
+        const controller = document.getElementById('controller');
+        const roomCodeInput = document.getElementById('roomCodeInput');
+        const connectBtn = document.getElementById('connectBtn');
+        const statusText = document.getElementById('statusText');
+        const statusDot = document.querySelector('.status-dot');
+        const currentRoom = document.getElementById('currentRoom');
+        
+        // 連線按鈕
+        connectBtn.addEventListener('click', () => {
+            roomCode = roomCodeInput.value.trim().toUpperCase();
+            if (roomCode.length < 4) {
+                alert('請輸入有效的房間代碼');
+                return;
+            }
+            connectWebSocket();
+        });
+        
+        // WebSocket 連線
+        function connectWebSocket() {
+            updateStatus('connecting', '連線中...');
+            
+            // Render 部署網址
+            ws = new WebSocket('wss://bounce-7ok4.onrender.com');
+            
+            ws.onopen = () => {
+                console.log('WebSocket 連線成功');
+                
+                // 加入房間
+                ws.send(JSON.stringify({
+                    type: 'join',
+                    room: roomCode,
+                    client_type: 'controller'
+                }));
+            };
+            
+            ws.onmessage = (event) => {
+                const data = JSON.parse(event.data);
+                
+                if (data.type === 'connected') {
+                    console.log('已加入房間:', data.room);
+                    updateStatus('connecting', '等待投影端...');
+                }
+                
+                if (data.type === 'both_connected') {
+                    console.log('投影端已連線!');
+                    updateStatus('connected', '已連線');
+                    isConnected = true;
+                    showController();
+                }
+                
+                if (data.type === 'peer_disconnected') {
+                    updateStatus('disconnected', '投影端已斷線');
+                    isConnected = false;
+                }
+            };
+            
+            ws.onerror = (error) => {
+                console.error('WebSocket 錯誤:', error);
+                updateStatus('disconnected', '連線錯誤');
+            };
+            
+            ws.onclose = () => {
+                console.log('WebSocket 連線關閉');
+                updateStatus('disconnected', '連線中斷');
+                isConnected = false;
+            };
+        }
+        
+        // 更新連線狀態
+        function updateStatus(status, text) {
+            statusDot.className = 'status-dot status-' + status;
+            statusText.textContent = text;
+        }
+        
+        // 顯示控制器
+        function showController() {
+            connectionPanel.style.display = 'none';
+            controller.style.display = 'block';
+            currentRoom.textContent = roomCode;
+        }
+        
+        // 發送控制指令
+        function sendControl(action) {
+            if (ws && ws.readyState === WebSocket.OPEN && isConnected) {
+                ws.send(JSON.stringify({
+                    type: 'control',
+                    action: action,
+                    timestamp: Date.now()
+                }));
+            }
+        }
+        
+        // 方向鍵控制
+        const dpadBtns = {
+            'dpad-up': 'up',
+            'dpad-down': 'down',
+            'dpad-left': 'left',
+            'dpad-right': 'right'
+        };
+        
+        Object.keys(dpadBtns).forEach(id => {
+            const btn = document.getElementById(id);
+            
+            btn.addEventListener('touchstart', (e) => {
+                e.preventDefault();
+                sendControl(dpadBtns[id]);
+            });
+            
+            btn.addEventListener('touchend', (e) => {
+                e.preventDefault();
+                if (id === 'dpad-left' || id === 'dpad-right') {
+                    sendControl('stop_horizontal');
+                }
+            });
+            
+            // 滑鼠事件 (測試用)
+            btn.addEventListener('mousedown', () => {
+                sendControl(dpadBtns[id]);
+            });
+            
+            btn.addEventListener('mouseup', () => {
+                if (id === 'dpad-left' || id === 'dpad-right') {
+                    sendControl('stop_horizontal');
+                }
+            });
+        });
+        
+        // A 按鈕 (跳躍)
+        document.getElementById('btnA').addEventListener('touchstart', (e) => {
+            e.preventDefault();
+            sendControl('jump');
+        });
+        
+        document.getElementById('btnA').addEventListener('mousedown', () => {
+            sendControl('jump');
+        });
+        
+        // B 按鈕 (高跳)
+        document.getElementById('btnB').addEventListener('touchstart', (e) => {
+            e.preventDefault();
+            sendControl('jump_high');
+        });
+        
+        document.getElementById('btnB').addEventListener('mousedown', () => {
+            sendControl('jump_high');
+        });
+        
+        // 暫停按鈕
+        document.getElementById('pauseBtn').addEventListener('click', () => {
+            isPaused = !isPaused;
+            const btn = document.getElementById('pauseBtn');
+            
+            if (isPaused) {
+                btn.textContent = '▶ 繼續';
+                sendControl('pause');
+            } else {
+                btn.textContent = '⏸ 暫停';
+                sendControl('resume');
+            }
+        });
+        
+        // 退出按鈕
+        document.getElementById('exitBtn').addEventListener('click', () => {
+            if (confirm('確定要退出遊戲嗎?')) {
+                sendControl('exit');
+                if (ws) ws.close();
+                location.reload();
+            }
+        });
+        
+        // 防止頁面滾動
+        document.body.addEventListener('touchmove', (e) => {
+            e.preventDefault();
+        }, { passive: false });
+    </script>
+</body>
+</html>
