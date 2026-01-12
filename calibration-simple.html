@@ -1,0 +1,433 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>簡易校正 - 手動標記</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            overflow: hidden;
+            background: #000;
+            font-family: Arial, sans-serif;
+            touch-action: none;
+        }
+
+        /* 全螢幕覆蓋層 */
+        #calibrationLayer {
+            position: absolute;
+            width: 100vw;
+            height: 100vh;
+            cursor: crosshair;
+        }
+
+        /* 已標記的點 */
+        .marked-point {
+            position: absolute;
+            width: 60px;
+            height: 60px;
+            border: 5px solid #00ff88;
+            border-radius: 50%;
+            background: rgba(0, 255, 136, 0.3);
+            pointer-events: none;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #00ff88;
+            font-weight: bold;
+            font-size: 24px;
+            box-shadow: 0 0 30px #00ff88;
+            animation: ping 1.5s ease-in-out infinite;
+            transform: translate(-50%, -50%);
+        }
+
+        @keyframes ping {
+            0%, 100% { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+            50% { opacity: 0.7; transform: translate(-50%, -50%) scale(1.1); }
+        }
+
+        /* 頂部提示 */
+        .top-instruction {
+            position: absolute;
+            top: 30px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(0, 0, 0, 0.9);
+            color: #00ff88;
+            padding: 20px 40px;
+            border-radius: 50px;
+            font-size: 24px;
+            font-weight: bold;
+            text-align: center;
+            z-index: 100;
+            animation: bounce 2s ease-in-out infinite;
+        }
+
+        @keyframes bounce {
+            0%, 100% { transform: translateX(-50%) translateY(0); }
+            50% { transform: translateX(-50%) translateY(-10px); }
+        }
+
+        /* 進度條 */
+        .progress {
+            position: absolute;
+            bottom: 150px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 80%;
+            max-width: 600px;
+            background: rgba(0, 0, 0, 0.8);
+            padding: 20px;
+            border-radius: 20px;
+            z-index: 100;
+        }
+
+        .progress-bar {
+            width: 100%;
+            height: 15px;
+            background: rgba(255, 255, 255, 0.2);
+            border-radius: 10px;
+            overflow: hidden;
+            margin-bottom: 15px;
+        }
+
+        .progress-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #00ff88, #00d4ff);
+            width: 0%;
+            transition: width 0.3s;
+            box-shadow: 0 0 20px #00ff88;
+        }
+
+        .progress-text {
+            color: white;
+            text-align: center;
+            font-size: 18px;
+        }
+
+        /* 底部按鈕 */
+        .bottom-controls {
+            position: absolute;
+            bottom: 30px;
+            left: 50%;
+            transform: translateX(-50%);
+            display: flex;
+            gap: 20px;
+            z-index: 100;
+        }
+
+        .btn {
+            padding: 18px 40px;
+            font-size: 18px;
+            font-weight: bold;
+            border: none;
+            border-radius: 50px;
+            cursor: pointer;
+            transition: all 0.3s;
+            box-shadow: 0 5px 20px rgba(0, 0, 0, 0.4);
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, #00ff88, #00d4ff);
+            color: #000;
+        }
+
+        .btn-secondary {
+            background: rgba(255, 255, 255, 0.2);
+            color: white;
+            backdrop-filter: blur(10px);
+        }
+
+        .btn:active {
+            transform: scale(0.95);
+        }
+
+        .btn.hidden {
+            display: none;
+        }
+
+        /* 成功畫面 */
+        .success-screen {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.95);
+            display: none;
+            align-items: center;
+            justify-content: center;
+            z-index: 200;
+        }
+
+        .success-content {
+            text-align: center;
+            color: white;
+        }
+
+        .success-icon {
+            font-size: 100px;
+            margin-bottom: 30px;
+            animation: bounceIn 0.5s;
+        }
+
+        @keyframes bounceIn {
+            0% { transform: scale(0); }
+            50% { transform: scale(1.2); }
+            100% { transform: scale(1); }
+        }
+
+        .success-content h1 {
+            font-size: 48px;
+            margin-bottom: 20px;
+            color: #00ff88;
+        }
+
+        .success-content p {
+            font-size: 24px;
+            opacity: 0.9;
+        }
+    </style>
+</head>
+<body>
+    <!-- 校正層 -->
+    <div id="calibrationLayer"></div>
+
+    <!-- 已標記的點容器 -->
+    <div id="markedPoints"></div>
+
+    <!-- 頂部提示 -->
+    <div class="top-instruction" id="instruction">
+        👆 點擊螢幕標記:點 1 (左上角)
+    </div>
+
+    <!-- 進度條 -->
+    <div class="progress">
+        <div class="progress-bar">
+            <div class="progress-fill" id="progressFill"></div>
+        </div>
+        <div class="progress-text" id="progressText">
+            已標記 0/4 個點
+        </div>
+    </div>
+
+    <!-- 底部按鈕 -->
+    <div class="bottom-controls">
+        <button class="btn btn-secondary" onclick="resetCalibration()">
+            🔄 重新標記
+        </button>
+        <button class="btn btn-primary hidden" id="completeBtn" onclick="complete()">
+            ✅ 完成校正
+        </button>
+    </div>
+
+    <!-- 成功畫面 -->
+    <div class="success-screen" id="successScreen">
+        <div class="success-content">
+            <div class="success-icon">✨</div>
+            <h1>校正完成!</h1>
+            <p>變換矩陣已計算並儲存</p>
+            <p style="margin-top: 20px; font-size: 18px;">即將跳轉到設定頁面...</p>
+        </div>
+    </div>
+
+    <script>
+        // 全域變數
+        let capturedPoints = [];
+        let sessionId = null;
+        
+        const pointNames = [
+            '點 1 (左上角)',
+            '點 2 (右上角)',
+            '點 3 (左下角)',
+            '點 4 (右下角)'
+        ];
+
+        const instructions = [
+            '👆 點擊螢幕標記:點 1 (左上角)',
+            '👆 點擊螢幕標記:點 2 (右上角)',
+            '👆 點擊螢幕標記:點 3 (左下角)',
+            '👆 點擊螢幕標記:點 4 (右下角)'
+        ];
+
+        // 初始化
+        function init() {
+            console.log('📐 簡易手動校正模式啟動');
+
+            // 取得 Session ID
+            const urlParams = new URLSearchParams(window.location.search);
+            sessionId = urlParams.get('session');
+            
+            if (!sessionId) {
+                sessionId = 'MANUAL_' + Date.now();
+                console.log('生成新的 Session ID:', sessionId);
+            }
+
+            // 點擊事件
+            document.getElementById('calibrationLayer').addEventListener('click', handleClick);
+        }
+
+        // 處理點擊
+        function handleClick(e) {
+            if (capturedPoints.length >= 4) return;
+
+            const x = e.clientX;
+            const y = e.clientY;
+
+            // 儲存點
+            capturedPoints.push({
+                x: x,
+                y: y,
+                screenX: (x / window.innerWidth) * 100,
+                screenY: (y / window.innerHeight) * 100
+            });
+
+            console.log(`✅ 標記點 ${capturedPoints.length}:`, { x, y });
+
+            // 顯示標記
+            addMarker(x, y, capturedPoints.length);
+
+            // 更新進度
+            updateProgress();
+
+            // 更新指示
+            if (capturedPoints.length < 4) {
+                document.getElementById('instruction').textContent = instructions[capturedPoints.length];
+            } else {
+                document.getElementById('instruction').textContent = '✅ 已標記所有點!點擊「完成校正」';
+                document.getElementById('completeBtn').classList.remove('hidden');
+            }
+
+            // 震動回饋
+            if (navigator.vibrate) {
+                navigator.vibrate(50);
+            }
+        }
+
+        // 添加標記
+        function addMarker(x, y, number) {
+            const marker = document.createElement('div');
+            marker.className = 'marked-point';
+            marker.style.left = x + 'px';
+            marker.style.top = y + 'px';
+            marker.textContent = number;
+            document.getElementById('markedPoints').appendChild(marker);
+        }
+
+        // 更新進度
+        function updateProgress() {
+            const progress = (capturedPoints.length / 4) * 100;
+            document.getElementById('progressFill').style.width = progress + '%';
+            document.getElementById('progressText').textContent = 
+                `已標記 ${capturedPoints.length}/4 個點`;
+        }
+
+        // 完成校正
+        function complete() {
+            console.log('🎉 校正完成!');
+
+            // 取得投影顯示的點座標
+            let displayData = JSON.parse(localStorage.getItem('calibrationDisplayPoints') || '{}');
+            
+            // 如果沒有顯示座標,使用預設值(四個角)
+            if (!displayData.displayPoints) {
+                displayData = {
+                    sessionId: sessionId,
+                    displayPoints: {
+                        point1: { x: 50, y: 50 },
+                        point2: { x: window.innerWidth - 50, y: 50 },
+                        point3: { x: 50, y: window.innerHeight - 50 },
+                        point4: { x: window.innerWidth - 50, y: window.innerHeight - 50 }
+                    },
+                    screenWidth: window.innerWidth,
+                    screenHeight: window.innerHeight
+                };
+            }
+
+            // 組合校正資料
+            const calibrationData = {
+                sessionId: sessionId,
+                timestamp: Date.now(),
+                displayPoints: displayData.displayPoints,
+                capturedPoints: {
+                    point1: capturedPoints[0],
+                    point2: capturedPoints[1],
+                    point3: capturedPoints[2],
+                    point4: capturedPoints[3]
+                },
+                screenSize: {
+                    width: window.innerWidth,
+                    height: window.innerHeight
+                }
+            };
+
+            // 計算變換矩陣
+            const matrix = calculateTransformMatrix(calibrationData);
+            calibrationData.transformMatrix = matrix;
+
+            // 儲存
+            localStorage.setItem('calibrationData', JSON.stringify(calibrationData));
+
+            console.log('✅ 校正資料已儲存:', calibrationData);
+
+            // 顯示成功畫面
+            document.getElementById('successScreen').style.display = 'flex';
+
+            // 3 秒後跳轉
+            setTimeout(() => {
+                window.location.href = '/setup-workflow.html';
+            }, 3000);
+        }
+
+        // 計算變換矩陣
+        function calculateTransformMatrix(data) {
+            const src = [
+                [data.capturedPoints.point1.x, data.capturedPoints.point1.y],
+                [data.capturedPoints.point2.x, data.capturedPoints.point2.y],
+                [data.capturedPoints.point3.x, data.capturedPoints.point3.y],
+                [data.capturedPoints.point4.x, data.capturedPoints.point4.y]
+            ];
+
+            const dst = [
+                [data.displayPoints.point1.x, data.displayPoints.point1.y],
+                [data.displayPoints.point2.x, data.displayPoints.point2.y],
+                [data.displayPoints.point3.x, data.displayPoints.point3.y],
+                [data.displayPoints.point4.x, data.displayPoints.point4.y]
+            ];
+
+            // 計算縮放和偏移
+            const scaleX = (dst[1][0] - dst[0][0]) / (src[1][0] - src[0][0]);
+            const scaleY = (dst[2][1] - dst[0][1]) / (src[2][1] - src[0][1]);
+            const offsetX = dst[0][0] - src[0][0] * scaleX;
+            const offsetY = dst[0][1] - src[0][1] * scaleY;
+
+            return {
+                type: 'affine',
+                srcPoints: src,
+                dstPoints: dst,
+                scaleX: scaleX,
+                scaleY: scaleY,
+                offsetX: offsetX,
+                offsetY: offsetY
+            };
+        }
+
+        // 重置
+        function resetCalibration() {
+            capturedPoints = [];
+            document.getElementById('markedPoints').innerHTML = '';
+            updateProgress();
+            document.getElementById('instruction').textContent = instructions[0];
+            document.getElementById('completeBtn').classList.add('hidden');
+        }
+
+        // 啟動
+        window.addEventListener('load', init);
+    </script>
+</body>
+</html>
