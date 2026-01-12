@@ -7,56 +7,63 @@ from aiohttp import web
 # 儲存連線的客戶端
 rooms = {}
 
-async def handle_websocket(websocket, path):
+async def handle_websocket(request):
+    """處理 WebSocket 連線 (透過 aiohttp)"""
+    ws = web.WebSocketResponse()
+    await ws.prepare(request)
+    
     room_code = None
     client_type = None
     
     try:
-        async for message in websocket:
-            data = json.loads(message)
+        async for msg in ws:
+            if msg.type == web.WSMsgType.TEXT:
+                data = json.loads(msg.data)
+                
+                if data['type'] == 'join':
+                    room_code = data['room']
+                    client_type = data['client_type']
+                    
+                    if room_code not in rooms:
+                        rooms[room_code] = {}
+                    
+                    rooms[room_code][client_type] = ws
+                    
+                    await ws.send_json({
+                        'type': 'connected',
+                        'room': room_code,
+                        'client_type': client_type
+                    })
+                    
+                    print(f"{client_type} joined room {room_code}")
+                    
+                    if 'projection' in rooms[room_code] and 'controller' in rooms[room_code]:
+                        for client_ws in rooms[room_code].values():
+                            if not client_ws.closed:
+                                await client_ws.send_json({
+                                    'type': 'both_connected',
+                                    'room': room_code
+                                })
+                
+                elif data['type'] == 'control':
+                    if room_code and room_code in rooms:
+                        if 'projection' in rooms[room_code]:
+                            projection_ws = rooms[room_code]['projection']
+                            if not projection_ws.closed:
+                                await projection_ws.send_json(data)
+                
+                elif data['type'] == 'game_state':
+                    if room_code and room_code in rooms:
+                        if 'controller' in rooms[room_code]:
+                            controller_ws = rooms[room_code]['controller']
+                            if not controller_ws.closed:
+                                await controller_ws.send_json(data)
             
-            if data['type'] == 'join':
-                room_code = data['room']
-                client_type = data['client_type']
-                
-                if room_code not in rooms:
-                    rooms[room_code] = {}
-                
-                rooms[room_code][client_type] = websocket
-                
-                await websocket.send(json.dumps({
-                    'type': 'connected',
-                    'room': room_code,
-                    'client_type': client_type
-                }))
-                
-                print(f"{client_type} joined room {room_code}")
-                
-                if 'projection' in rooms[room_code] and 'controller' in rooms[room_code]:
-                    for ws in rooms[room_code].values():
-                        if ws.open:
-                            await ws.send(json.dumps({
-                                'type': 'both_connected',
-                                'room': room_code
-                            }))
-            
-            elif data['type'] == 'control':
-                if room_code and room_code in rooms:
-                    if 'projection' in rooms[room_code]:
-                        projection_ws = rooms[room_code]['projection']
-                        if projection_ws.open:
-                            await projection_ws.send(json.dumps(data))
-            
-            elif data['type'] == 'game_state':
-                if room_code and room_code in rooms:
-                    if 'controller' in rooms[room_code]:
-                        controller_ws = rooms[room_code]['controller']
-                        if controller_ws.open:
-                            await controller_ws.send(json.dumps(data))
+            elif msg.type == web.WSMsgType.ERROR:
+                print(f'WebSocket connection closed with exception {ws.exception()}')
     
-    except websockets.exceptions.ConnectionClosed:
-        print(f"Connection closed for {client_type} in room {room_code}")
     finally:
+        # 清理連線
         if room_code and room_code in rooms:
             if client_type in rooms[room_code]:
                 del rooms[room_code][client_type]
@@ -64,14 +71,15 @@ async def handle_websocket(websocket, path):
             if not rooms[room_code]:
                 del rooms[room_code]
             else:
-                for ws in rooms[room_code].values():
-                    if ws.open:
-                        await ws.send(json.dumps({
+                for client_ws in rooms[room_code].values():
+                    if not client_ws.closed:
+                        await client_ws.send_json({
                             'type': 'peer_disconnected',
                             'room': room_code
-                        }))
+                        })
+    
+    return ws
 
-# HTTP 處理器
 async def handle_projection(request):
     html_content = """
 <!DOCTYPE html>
@@ -159,7 +167,7 @@ async def handle_projection(request):
         
         function connectWebSocket() {
             const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-            ws = new WebSocket(protocol + '//' + window.location.host);
+            ws = new WebSocket(protocol + '//' + window.location.host + '/ws');
             
             ws.onopen = () => {
                 console.log('WebSocket 連線成功');
@@ -569,7 +577,7 @@ async def handle_controller(request):
         function connectWebSocket() {
             updateStatus('connecting', '連線中...');
             const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-            ws = new WebSocket(protocol + '//' + window.location.host);
+            ws = new WebSocket(protocol + '//' + window.location.host + '/ws');
             
             ws.onopen = () => {
                 console.log('WebSocket 連線成功');
@@ -779,28 +787,27 @@ async def handle_index(request):
 """
     return web.Response(text=html_content, content_type='text/html')
 
-async def init_app():
+async def main():
     app = web.Application()
+    
+    # 路由設定
     app.router.add_get('/', handle_index)
     app.router.add_get('/projection', handle_projection)
     app.router.add_get('/controller', handle_controller)
-    return app
-
-async def main():
-    # 啟動 HTTP 伺服器
-    app = await init_app()
+    app.router.add_get('/ws', handle_websocket)  # WebSocket 路由
+    
+    # 啟動伺服器
+    PORT = int(os.environ.get('PORT', 10000))
     runner = web.AppRunner(app)
     await runner.setup()
-    
-    PORT = int(os.environ.get('PORT', 10000))
     site = web.TCPSite(runner, '0.0.0.0', PORT)
     await site.start()
-    print(f"HTTP Server running on port {PORT}")
     
-    # 啟動 WebSocket 伺服器 (使用相同的 port)
-    print(f"WebSocket Server running on port {PORT}")
-    async with websockets.serve(handle_websocket, "0.0.0.0", PORT):
-        await asyncio.Future()
+    print(f"🚀 Server running on port {PORT}")
+    print(f"📱 Visit: https://bounce-7ok4.onrender.com")
+    
+    # 保持運行
+    await asyncio.Future()
 
 if __name__ == "__main__":
     asyncio.run(main())
